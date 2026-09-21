@@ -180,9 +180,9 @@ SYSTEM_ONE_MODEL=laya      # the spec's `name`, or `laya` after a fetch
 ```
 
 ```python
-from system_one import SystemOne
+from system_one import ONNXConfig, SystemOne
 
-with SystemOne("onnx", model="laya") as agent:
+with SystemOne(ONNXConfig(model="laya")) as agent:
     response = agent.ask(
         "Our production deployment failed after the upgrade.",
         {

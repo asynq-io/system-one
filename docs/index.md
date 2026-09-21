@@ -2,8 +2,8 @@
 
 A vendor-neutral SDK for System One models. One contract —
 `ask(state, questions) -> answers` — over three question primitives
-(`noul`, `choice`, `score`). Switching providers is an environment variable,
-not a code change.
+(`noul`, `choice`, `score`). Switching providers is one config
+object, not a code change.
 
 These are decision models, not chat models: no messages, no streaming, no
 temperature. You hand the model a state and a set of typed questions; it hands
@@ -26,9 +26,9 @@ lives behind an extra.
 === "Sync"
 
     ```python
-    from system_one import SystemOne
+    from system_one import SystemOne, TypesafeConfig
 
-    with SystemOne() as agent:
+    with SystemOne(TypesafeConfig()) as agent:  # reads $SYSTEM_ONE_API_KEY
         response = agent.ask(
             "Customer is furious about a double charge.",
             {
@@ -54,9 +54,9 @@ lives behind an extra.
 === "Async"
 
     ```python
-    from system_one import AsyncSystemOne
+    from system_one import AsyncSystemOne, TypesafeConfig
 
-    async with AsyncSystemOne() as agent:
+    async with AsyncSystemOne(TypesafeConfig()) as agent:
         response = await agent.ask(
             "Customer is furious about a double charge.",
             {"urgent": {"type": "noul", "instructions": "Does this need a human now?"}},
@@ -71,7 +71,7 @@ same method names as [`SystemOne`][system_one.agent.SystemOne], awaited:
 
 - [Questions](usage/questions.md) — the three primitives and how to write them.
 - [Answers](usage/answers.md) — what comes back, and what the numbers mean.
-- [Configuration](usage/configuration.md) — `SYSTEM_ONE_*` and per-agent overrides.
+- [Configuration](usage/configuration.md) — `SYSTEM_ONE_*` and the config classes.
 - [Backends](usage/backends.md) — hosted HTTP vs local ONNX.
 - [Local model](usage/local-model.md) — fetch or export laya as ONNX and run offline.
 - [Errors](usage/errors.md) — the exception tree and retry behaviour.

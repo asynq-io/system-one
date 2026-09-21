@@ -53,6 +53,8 @@ SystemOne(ONNXConfig())  # local graph, no network, no key
 
 `SYSTEM_ONE_BACKEND=onnx` picks the local backend without naming a config, and
 `SystemOne(model="x")` overrides whichever model the config would have used.
+`SystemOne(using=...)` skips config entirely and takes a backend *instance* —
+see [Backends](backends.md).
 
 ## Lifecycle
 

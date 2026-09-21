@@ -12,7 +12,7 @@
 
 A vendor-neutral SDK for System One models. One contract — `ask(state, questions)
 -> answers` — over three question primitives (`noul`, `choice`, `score`).
-Switching providers is an environment variable, not a code change.
+Switching providers is one config object, not a code change.
 
 These are decision models, not chat models: no messages, no streaming, no
 temperature.
@@ -27,9 +27,9 @@ pip install "system-one[onnx]"   # local, in-process
 ## Usage
 
 ```python
-from system_one import SystemOne
+from system_one import SystemOne, TypesafeConfig
 
-with SystemOne() as agent:
+with SystemOne(TypesafeConfig()) as agent:  # reads $SYSTEM_ONE_API_KEY
     response = agent.ask(
         "Customer is furious about a double charge.",
         {

@@ -7,9 +7,10 @@ tools, so an MCP client can ask System One questions without writing any Python.
 pip install "system-one[mcp]"
 ```
 
-The agent it builds is a plain `AsyncSystemOne`, so it reads the same
-`SYSTEM_ONE_*` [configuration](configuration.md) — including
-`SYSTEM_ONE_BACKEND=onnx` for a fully local server.
+The agent it builds is a plain `AsyncSystemOne` with no config argument, so it
+is configured entirely by `SYSTEM_ONE_*` [environment
+variables](configuration.md): `SYSTEM_ONE_BASE_URL` and `SYSTEM_ONE_MODEL` for
+the HTTP backend, or `SYSTEM_ONE_BACKEND=onnx` for a fully local server.
 
 ## Running it
 
@@ -90,7 +91,11 @@ schemas.
     "system-one": {
       "command": "system-one-mcp",
       "args": ["--config", "/path/to/questions.yaml"],
-      "env": {"SYSTEM_ONE_API_KEY": "…"}
+      "env": {
+        "SYSTEM_ONE_BASE_URL": "https://api.typesafe.ai",
+        "SYSTEM_ONE_MODEL": "jev-latest",
+        "SYSTEM_ONE_API_KEY": "…"
+      }
     }
   }
 }

@@ -17,6 +17,10 @@ on:
     # cron every week on monday
     - cron: "0 0 * * 1"
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   tests:
     strategy:
