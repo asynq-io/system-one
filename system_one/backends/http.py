@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("system_one")
 
+DEFAULT_MODEL = "jev-latest"
 MODELS_PATH = "/v1/models"
 MAX_BACKOFF = 5.0
 INITIAL_BACKOFF = 0.5
@@ -93,6 +94,7 @@ class BaseHTTPBackend:
                 "No API key. Set SYSTEM_ONE_API_KEY to use the http backend."
             )
         self.settings = settings
+        self.model = settings.model or DEFAULT_MODEL
         self._transport = transport
         self._headers = {
             "Authorization": f"Bearer {settings.api_key.get_secret_value()}",

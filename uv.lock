@@ -3916,6 +3916,7 @@ export = [
     { name = "onnxscript" },
     { name = "safetensors" },
     { name = "torch" },
+    { name = "transformers" },
 ]
 http = [
     { name = "httpx2" },
@@ -4001,6 +4002,7 @@ requires-dist = [
     { name = "system-one", extras = ["hub"], marker = "extra == 'export'" },
     { name = "tokenizers", marker = "extra == 'onnx'", specifier = ">=0.21" },
     { name = "torch", marker = "extra == 'export'", specifier = ">=2.6" },
+    { name = "transformers", marker = "extra == 'export'", specifier = ">=4.48" },
 ]
 provides-extras = ["http", "onnx", "mcp", "hub", "export", "all"]
 

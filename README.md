@@ -63,7 +63,7 @@ and any of them can be overridden per agent: `SystemOne(model="...", timeout=30)
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `SYSTEM_ONE_BACKEND` | `http` | `http` or `onnx` |
-| `SYSTEM_ONE_MODEL` | `jev-latest` | |
+| `SYSTEM_ONE_MODEL` | — | the backend's own default: `jev-latest` (http), `laya` (onnx) |
 | `SYSTEM_ONE_API_KEY` | — | required by the `http` backend |
 | `SYSTEM_ONE_BASE_URL` | `https://api.typesafe.ai` | |
 | `SYSTEM_ONE_PATH` | `/v1/systemone` | |
@@ -89,7 +89,7 @@ SYSTEM_ONE_BACKEND=onnx
 
 Backend-specific calls stay reachable through `agent.backend`, for example
 `agent.backend.models()` on the HTTP backend. Tests can inject one directly:
-`SystemOne(backend=FakeBackend())`.
+`SystemOne(using=FakeBackend())`.
 
 ## Running locally
 
@@ -101,16 +101,16 @@ in the layout the backend reads:
 
 ```shell
 pip install "system-one[onnx,hub]"
-system-one fetch --out-dir onnx                    # --variant fp32|int8|fp16, --repo <hf-repo>
+system-one fetch --out-dir onnx   # --variant fp32|int8|fp16, --name sets the base name
 ```
 
 That writes `onnx/laya.onnx` (≈1.6 GB fp32), `onnx/laya.json` and
 `onnx/tokenizer/` — no torch, no tracing. To use another laya variant or your
 own model, write a spec and run
 `system-one export examples/export/laya-english.yaml`; that needs
-`system-one[export]`. `SYSTEM_ONE_MODEL` still defaults to `jev-latest` — the
-hosted provider's model — so a local run has to set it. Nothing leaves the
-machine:
+`system-one[export]`. Unset, `SYSTEM_ONE_MODEL` is whatever the backend serves —
+`laya` here — so a local run only sets it for a differently named graph. Nothing
+leaves the machine:
 
 ```shell
 SYSTEM_ONE_BACKEND=onnx
@@ -120,7 +120,10 @@ SYSTEM_ONE_MODEL=laya      # the file base name in that directory
 
 ```python
 with SystemOne("onnx", model="laya") as agent:
-    response = agent.ask("The site is down.", {"outage": {"type": "noul", "instructions": "Is there an outage?"}})
+    response = agent.ask(
+        "The site is down.",
+        {"outage": {"type": "noul", "instructions": "Is there an outage?"}},
+    )
 ```
 
 Full walkthrough — fetch vs export, variants, several models in one directory,

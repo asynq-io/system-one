@@ -28,6 +28,9 @@ pytestmark = [
     pytest.mark.timeout(120),
 ]
 
+# 321 tokens, and it must stay under `max_len` minus the longest head below: the
+# reference truncates an overlong state, `build_items` raises on one, so a longer
+# state here would stop the two being comparable at all.
 LONG_STATE = "Our production deployment failed after the upgrade. " * 40
 MANY_OPTIONS = {f"k{index:02d}": f"option number {index}" for index in range(18)}
 
@@ -138,5 +141,6 @@ def test_missing_graph_names_the_model_file_and_the_variable(tmp_path: Path) -> 
     with pytest.raises(SystemOneError, match=r"other\.onnx"):
         ONNXBackend(Settings(backend="onnx", onnx_dir=tmp_path, model="other"))
 
-    with pytest.raises(SystemOneError, match="SYSTEM_ONE_ONNX_DIR"):
-        ONNXBackend(Settings(backend="onnx", onnx_dir=tmp_path))
+    # No SYSTEM_ONE_MODEL: the onnx backend fills in the published graph's name.
+    with pytest.raises(SystemOneError, match=r"laya\.onnx.*SYSTEM_ONE_ONNX_DIR"):
+        ONNXBackend(Settings(backend="onnx", onnx_dir=tmp_path, model=None))

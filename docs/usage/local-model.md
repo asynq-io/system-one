@@ -13,7 +13,7 @@ write the same three-file layout, which you then point `SYSTEM_ONE_ONNX_DIR` at.
 
 ```mermaid
 flowchart TB
-    HFO["--repo (default rarha/laya-onnx)<br/>laya.onnx, tokenizer.json"]
+    HFO["rarha/laya-onnx<br/>laya.onnx, tokenizer.json"]
     HFT["convaiinnovations/laya<br/>model.safetensors, rl_agent_config.json"]
     FE["system-one fetch<br/>huggingface_hub only"]
     EX["system-one export spec.yaml<br/>one-time, needs torch + laya"]
@@ -24,7 +24,7 @@ flowchart TB
     A["agent.ask(state, questions)<br/>noul / choice / score"]
 
     HFO --> FE
-    CAL["system_one.cli:LAYA_CALIBRATION<br/>bundled with the package"] --> FE
+    CAL["system_one.catalog:FETCH_CALIBRATION<br/>bundled with the package"] --> FE
     HFT --> EX
     FE --> G
     FE --> C
@@ -52,7 +52,7 @@ That pulls the exported english/root graph from
 onnx/
 ├── laya.onnx       # the graph
 ├── laya.onnx.data  # external weights, ≈1.6 GB fp32
-├── laya.json       # calibration: max_len, head_max_len, temperatures
+├── laya.json       # calibration: max_len, head_max_len, temperatures + source
 └── tokenizer/
     └── tokenizer.json
 ```
@@ -62,29 +62,57 @@ onnx/
 | `--variant` | `fp32` | `fp32`; `int8` and `fp16` exist only in repos that publish them |
 | `--out-dir` / `-o` | `onnx` | where to write — must match `SYSTEM_ONE_ONNX_DIR` |
 | `--revision` | `main` | pin the repo to a commit or tag |
-| `--repo` | `rarha/laya-onnx` | any repo with the same flat layout (`laya.onnx`, `laya.onnx.data`, `tokenizer.json`) |
+| `--name` | `laya` | local base name: `<name>.onnx`, `<name>.json`. Must match `SYSTEM_ONE_MODEL` |
 
-The output base name is always `laya`: the fp32 and fp16 graphs reference their
-external-data file by name from inside the ONNX proto, so renaming would take
-graph surgery. Use a separate `--out-dir` per variant instead.
+`--name` sets the local base name (default `laya`), but the fp32 and fp16 graphs
+reference their external-data file by name from inside the ONNX proto, so renaming
+those would take graph surgery — only `int8`, which has no sidecar, renames cleanly.
+Use a separate `--out-dir` per variant.
 
-`laya.json` is not downloaded — the calibration is `LAYA_CALIBRATION` in
-`system_one/cli.py`, laya's root checkpoint values (`max_len`, `head_max_len`,
+`laya.json` is not downloaded — the calibration is `FETCH_CALIBRATION` in
+`system_one/catalog.py`, laya's root checkpoint values (`max_len`, `head_max_len`,
 the three temperatures and the per-option table). A different checkpoint has
-different temperatures, so a `--repo` holding some other conversion needs its
+different temperatures, so a graph from some other conversion needs its
 `laya.json` replaced by hand or written by `system-one export`.
+
+Both `fetch` and `export` also stamp a `source` block into that file, recording
+which repo, revision and weights the graph came from and the SHA256 of the graph
+itself:
+
+```json
+{
+ "max_len": 512,
+ "head_max_len": 192,
+ "temperature": [1.6369, 1.2514, 1.9834],
+ "temperature_by_options": {"choice:2": 1.9064},
+ "source": {
+  "repo": "rarha/laya-onnx",
+  "revision": "c5d7873...",
+  "graph_sha256": "57e26e5da4fb3a00...",
+  "exporter": "system-one 0.1.0",
+  "variant": "fp32",
+  "calibration": "system_one.catalog:FETCH_CALIBRATION"
+ }
+}
+```
+
+`graph_sha256` is the one field checked at load: if it does not match the
+`<name>.onnx` next to it, the calibration and the graph came from different
+places and loading fails. It costs about 2 ms — the weights live in the
+`.onnx.data` sidecar, so only the few megabytes of graph proto are hashed. A
+hand-placed graph with no `source` block loads unchanged, and everything else in
+the block is there to answer "which weights produced this number" later.
 
 Only the `english` checkpoint is published as ONNX. For `multilingual` or
 `typed-decisions`, export them yourself.
 
-!!! warning "`--repo Mattepiu/laya-onnx` takes two options at most"
-    The other published conversion,
-    [`Mattepiu/laya-onnx`](https://huggingface.co/Mattepiu/laya-onnx), was
-    traced with the option count frozen at 2 — it declares
-    `marker_pos [batch, 2]` and reshapes to it internally, so a choice or score
-    question with three or more criteria fails with `Got invalid dimensions for
-    input: marker_pos`. It does carry `int8` and `fp16` variants, which are
-    quantisations of that same trace. The default repo has no such ceiling.
+A graph traced with the option count frozen — as
+[`Mattepiu/laya-onnx`](https://huggingface.co/Mattepiu/laya-onnx) is, at 2 — is
+checked at load: the backend reads the `marker_pos` dimension out of the graph
+and refuses a question with more criteria than that, naming the ceiling, instead
+of letting onnxruntime fail with `Got invalid dimensions for input: marker_pos`.
+`fetch` serves `rarha/laya-onnx`, which declares that dimension dynamic and so
+has no ceiling.
 
 ## 2. Or export a checkpoint yourself
 
@@ -92,7 +120,7 @@ An export of your own has no option-count ceiling: the `options` dimension is
 traced as dynamic.
 
 ```shell
-uv sync --all-extras --group dev   # dev carries laya, and through it torch
+uv sync --all-extras            # the export extra carries torch and transformers
 uv run system-one export examples/export/laya-english.yaml -o onnx
 ```
 
@@ -112,7 +140,7 @@ subfolder: multilingual
 | `path` | — | local checkpoint directory instead of a download |
 | `revision` | `main` | pin the checkpoint repo |
 | `subfolder` | `""` | checkpoint subdirectory inside the repo |
-| `builder` | `system_one.export:build_laya` | `module:function`, called as `builder(config, model_dir) -> torch.nn.Module` |
+| `builder` | `system_one.export:build_decision_model` | `module:function`, called as `builder(config, model_dir) -> torch.nn.Module` |
 | `config_file` | `rl_agent_config.json` | model config, read for the calibration keys |
 | `weights` | `model.safetensors` | state dict, loaded with `strict=True` |
 | `tokenizer_dir` | `tokenizer` | copied verbatim next to the graph |
@@ -135,8 +163,8 @@ inputs — expect `max |dlogits|` around `1e-4` or below.
 !!! note
     `name` is a file base name, not a model identity — it is what
     `SYSTEM_ONE_MODEL` has to say and what comes back as `response.model`.
-    `SYSTEM_ONE_MODEL` itself still defaults to `jev-latest`, the hosted
-    provider's model, so a local run has to set it.
+    Left unset it is `laya`, the published graph's name, so only a spec with
+    another `name` needs `SYSTEM_ONE_MODEL` at all.
 
 The variants are laya's three checkpoints: `english` (ModernBERT-large, 421M
 params), `multilingual` (mmBERT-base, 322M params, 100+ languages and roughly
@@ -217,10 +245,38 @@ SYSTEM_ONE_MODEL=laya-multi uv run pytest tests/backends/test_onnx_local.py
 
 | Symptom | Cause |
 | --- | --- |
-| `SystemOneError: No ONNX graph at …` | `SYSTEM_ONE_ONNX_DIR` / `SYSTEM_ONE_MODEL` do not match the written file names. |
+| `SystemOneError: No ONNX artifact at …` | `SYSTEM_ONE_ONNX_DIR` / `SYSTEM_ONE_MODEL` do not match the written file names, or `<name>.json` / `tokenizer/` is missing next to the graph. |
+| `SystemOneError: … does not match the graph_sha256 …` | The calibration was written for a different graph. Re-run `fetch` or `export` so both are written together. |
+| `SystemOneError: state is N tokens but max_len=…` | The state does not fit. Shorten it or split it across asks — the SDK refuses rather than truncating and answering anyway. |
+| `SystemOneError: … caps marker_pos at K` | The graph was traced with a frozen option count. Export your own, or ask fewer criteria per question. |
 | `ImportError` naming a pip command | An extra is missing: `system-one[onnx]` to run, `[hub]` to fetch, `[export]` to export. |
 | `SystemOneError: The tokenizer has no [MASK] token` | `tokenizer/` was not written next to the graph, or came from another model. |
 | First `ask` is slow | The session loads ≈1.6 GB of weights once; it is then cached for the process. |
 
 Moving the directory is fine — it holds no absolute paths. Copy `onnx/` to
 another machine with the `onnx` extra installed and it runs there, offline.
+
+## Apple Silicon
+
+The session is created with `providers=["CPUExecutionProvider"]` and there is no
+setting to change it. Measured on an M-series Mac against a 1842-node graph with
+fully dynamic shapes:
+
+| Experiment | Result |
+| --- | --- |
+| CPU EP, 3 questions | 553 ms median |
+| ORT CoreML EP, `MLProgram` | crashes at init — `HandleNegativeAxis: axis 2 not in valid range [-2,1]`, at every compute-unit setting, with graph optimisation on and off |
+| ORT CoreML EP, `NeuralNetwork` | builds but claims zero nodes, so it falls back to CPU anyway (280 ms vs 296 ms) |
+| 1 question, dynamic `(1, 37)` → fixed `(1, 512)` | 153 ms → 1661 ms |
+| 3 questions, dynamic `(3, 37)` → fixed `(3, 512)` | 396 ms → 4903 ms |
+
+Core ML needs enumerated or fixed shapes, and fixing them costs about 11× here
+because every ask then pays for a full `max_len` sequence. A provider flag would
+only offer a choice between a crash and a slower run.
+
+Revisiting this needs all three of: a coremltools conversion with enumerated
+shapes rather than the onnxruntime EP, a macOS-only extra to carry it, and a
+reason to buy energy rather than latency — the ANE is the efficiency win, not the
+speed win. For reference, the comparable Core ML port publishes 11.28 ms for an
+ordinary SDPA export against MLX's 7.87 ms, and its 4.98 ms headline belongs to a
+hand-written ANE graph pinned at one batch and 96 tokens.

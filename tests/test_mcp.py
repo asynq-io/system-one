@@ -36,6 +36,8 @@ routing:
 
 
 class FakeAsyncBackend:
+    model = "fake-latest"
+
     def __init__(self) -> None:
         self.requests: list[SystemOneInput] = []
         self.closed = False
@@ -68,7 +70,7 @@ def tool_names(server: FastMCP) -> set[str]:
 
 def test_yaml_groups_become_tools(tmp_path: Path) -> None:
     server = create_server(
-        write_config(tmp_path), agent=AsyncSystemOne(FakeAsyncBackend())
+        write_config(tmp_path), agent=AsyncSystemOne(using=FakeAsyncBackend())
     )
     tools = {tool.name: tool for tool in asyncio.run(server.list_tools())}
 
@@ -84,7 +86,7 @@ def test_yaml_groups_become_tools(tmp_path: Path) -> None:
 @pytest.mark.timeout(15)  # the first in-memory client pulls in jsonschema
 def test_group_tool_sends_its_configured_questions(tmp_path: Path) -> None:
     backend = FakeAsyncBackend()
-    server = create_server(write_config(tmp_path), agent=AsyncSystemOne(backend))
+    server = create_server(write_config(tmp_path), agent=AsyncSystemOne(using=backend))
 
     async def call() -> Any:
         async with Client(server) as client:
@@ -102,14 +104,16 @@ def test_group_tool_sends_its_configured_questions(tmp_path: Path) -> None:
 def test_generic_tool_only_without_config_or_with_flag(tmp_path: Path) -> None:
     config = write_config(tmp_path)
 
-    assert tool_names(create_server(agent=AsyncSystemOne(FakeAsyncBackend()))) == {
-        "ask"
-    }
+    assert tool_names(
+        create_server(agent=AsyncSystemOne(using=FakeAsyncBackend()))
+    ) == {"ask"}
     assert "ask" not in tool_names(
-        create_server(config, agent=AsyncSystemOne(FakeAsyncBackend()))
+        create_server(config, agent=AsyncSystemOne(using=FakeAsyncBackend()))
     )
     assert tool_names(
-        create_server(config, generic=True, agent=AsyncSystemOne(FakeAsyncBackend()))
+        create_server(
+            config, generic=True, agent=AsyncSystemOne(using=FakeAsyncBackend())
+        )
     ) == {"moderation", "routing", "ask"}
 
 

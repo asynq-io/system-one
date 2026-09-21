@@ -61,8 +61,8 @@ The directory must hold three things for the configured model:
 
 ```
 onnx/
-├── jev-latest.onnx      # the exported graph
-├── jev-latest.json      # model config: prompt layout, temperature buckets
+├── laya.onnx            # the exported graph
+├── laya.json            # model config: prompt layout, temperature buckets
 └── tokenizer/
     └── tokenizer.json
 ```
@@ -96,7 +96,7 @@ class FakeBackend:
         pass
 
 
-agent = SystemOne(backend=FakeBackend())
+agent = SystemOne(using=FakeBackend())
 ```
 
 Settings are still resolved when you inject a backend, so `agent.settings.model`

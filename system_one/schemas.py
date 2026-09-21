@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from functools import cached_property
-from typing import Annotated, Any, ClassVar, Literal, TypeAlias
+from typing import Annotated, Any, Literal, TypeAlias, TypeVar
 
 from pydantic import (
     BaseModel,
@@ -132,47 +132,56 @@ Question: TypeAlias = Annotated[Noul | Choice | Score, Field(discriminator="type
 QuestionInput: TypeAlias = Mapping[str, Question | Mapping[str, Any]]
 
 
-class NoulAnswer(BaseOutput):
+class ConfidentAnswer(BaseOutput):
+    """An answer that reports how much to trust itself on one scale for every type.
+
+    The hosted API always sends `confidence`; `_derive` fills it in for providers that
+    do not. A payload it cannot trust leaves `confidence` unset, because an absent
+    confidence is honest while a fabricated `1.0` is not.
+    """
+
+    confidence: float | None = None
+
+    @classmethod
+    def _derive(cls, data: Mapping[str, Any]) -> float | None:
+        """Confidence implied by the raw payload, or `None` if it cannot be derived."""
+        raise NotImplementedError
+
+    @model_validator(mode="before")
+    @classmethod
+    def _fill_confidence(cls, data: Any) -> Any:
+        if not isinstance(data, Mapping) or data.get("confidence") is not None:
+            return data
+        confidence = cls._derive(data)
+        if confidence is None:
+            return data
+        return {**data, "confidence": round(confidence, ROUNDING)}
+
+
+def confidence_over(
+    probabilities: Any, measure: Callable[[Iterable[float]], float]
+) -> float | None:
+    """`measure` over a probability mapping, or `None` when it is not one we trust."""
+    if not isinstance(probabilities, Mapping):
+        return None
+    try:
+        return measure(probabilities.values())
+    except (ValueError, TypeError):
+        return None
+
+
+class NoulAnswer(ConfidentAnswer):
     """A yes/no answer, where `noul` is the probability the statement holds."""
 
     type: Literal["noul"] = "noul"
     noul: float
 
-    @property
-    def confidence(self) -> float:
-        """Probability of the reported outcome — `choice_confidence` over two levels.
-
-        The hosted API does not send this; it is derived so that every answer type
-        reports confidence on the same scale.
-        """
-        return round(max(self.noul, 1.0 - self.noul), ROUNDING)
-
-
-class ConfidentAnswer(BaseOutput):
-    """An answer whose confidence is derived from its probabilities when omitted.
-
-    The hosted API always reports `confidence`; this fills it in for providers that
-    do not. Probabilities it cannot trust leave `confidence` unset, because an
-    absent confidence is honest while a fabricated `1.0` is not.
-    """
-
-    confidence: float | None = None
-
-    _confidence_of: ClassVar[staticmethod[[Iterable[float]], float]]
-
-    @model_validator(mode="before")
     @classmethod
-    def _confidence_from_probabilities(cls, data: Any) -> Any:
-        if not isinstance(data, Mapping) or data.get("confidence") is not None:
-            return data
-        probabilities = data.get("probabilities")
-        if not isinstance(probabilities, Mapping):
-            return data
-        try:
-            confidence = cls._confidence_of(probabilities.values())
-        except (ValueError, TypeError):
-            return data
-        return {**data, "confidence": round(confidence, ROUNDING)}
+    def _derive(cls, data: Mapping[str, Any]) -> float | None:
+        noul = data.get("noul")
+        if not isinstance(noul, (int, float)) or isinstance(noul, bool):
+            return None
+        return max(float(noul), 1.0 - float(noul))
 
 
 class ChoiceAnswer(ConfidentAnswer):
@@ -182,7 +191,9 @@ class ChoiceAnswer(ConfidentAnswer):
     choice: str
     probabilities: dict[str, float] | None = None
 
-    _confidence_of = staticmethod(choice_confidence)
+    @classmethod
+    def _derive(cls, data: Mapping[str, Any]) -> float | None:
+        return confidence_over(data.get("probabilities"), choice_confidence)
 
 
 class ScoreAnswer(ConfidentAnswer):
@@ -193,12 +204,15 @@ class ScoreAnswer(ConfidentAnswer):
     legend: dict[int, JSONValue] | None = None
     probabilities: dict[int, float] | None = None
 
-    _confidence_of = staticmethod(score_confidence)
+    @classmethod
+    def _derive(cls, data: Mapping[str, Any]) -> float | None:
+        return confidence_over(data.get("probabilities"), score_confidence)
 
 
 Answer: TypeAlias = Annotated[
     NoulAnswer | ChoiceAnswer | ScoreAnswer, Field(discriminator="type")
 ]
+AnswerT = TypeVar("AnswerT", NoulAnswer, ChoiceAnswer, ScoreAnswer)
 
 
 class Usage(BaseOutput):
@@ -233,26 +247,21 @@ class SystemOneOutput(BaseOutput):
     answers: dict[str, Answer] = Field(default_factory=dict)
     id: str | None = None
 
-    @cached_property
-    def nouls(self) -> dict[str, NoulAnswer]:
+    def _of_type(self, kind: type[AnswerT]) -> dict[str, AnswerT]:
         return {
             name: answer
             for name, answer in self.answers.items()
-            if isinstance(answer, NoulAnswer)
+            if isinstance(answer, kind)
         }
+
+    @cached_property
+    def nouls(self) -> dict[str, NoulAnswer]:
+        return self._of_type(NoulAnswer)
 
     @cached_property
     def choices(self) -> dict[str, ChoiceAnswer]:
-        return {
-            name: answer
-            for name, answer in self.answers.items()
-            if isinstance(answer, ChoiceAnswer)
-        }
+        return self._of_type(ChoiceAnswer)
 
     @cached_property
     def scores(self) -> dict[str, ScoreAnswer]:
-        return {
-            name: answer
-            for name, answer in self.answers.items()
-            if isinstance(answer, ScoreAnswer)
-        }
+        return self._of_type(ScoreAnswer)

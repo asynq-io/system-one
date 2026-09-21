@@ -10,6 +10,8 @@ QUESTIONS = {"urgent": {"type": "noul", "instructions": "Does this need a human?
 
 
 class FakeBackend:
+    model = "fake-latest"
+
     def __init__(self) -> None:
         self.requests: list[SystemOneInput] = []
         self.closed = False
@@ -40,17 +42,17 @@ class FakeAsyncBackend(FakeBackend):
 
 def test_ask_round_trips_through_the_backend() -> None:
     backend = FakeBackend()
-    agent = SystemOne(backend=backend)
+    agent = SystemOne(using=backend)
     response = agent.ask("Customer is furious.", QUESTIONS)
 
     assert response.nouls["urgent"].noul == 0.9
     assert backend.requests[0].state == "Customer is furious."
-    assert backend.requests[0].model == "jev-latest"
+    assert backend.requests[0].model == "fake-latest"
 
 
 def test_async_ask_round_trips_through_the_backend() -> None:
     backend = FakeAsyncBackend()
-    agent = AsyncSystemOne(backend=backend)
+    agent = AsyncSystemOne(using=backend)
     response = asyncio.run(agent.ask("hi", QUESTIONS))
 
     assert response.nouls["urgent"].noul == 0.9
@@ -58,7 +60,7 @@ def test_async_ask_round_trips_through_the_backend() -> None:
 
 def test_per_call_model_overrides_settings() -> None:
     backend = FakeBackend()
-    SystemOne(backend=backend).ask("hi", QUESTIONS, model="other")
+    SystemOne(using=backend).ask("hi", QUESTIONS, model="other")
 
     assert backend.requests[0].model == "other"
 
@@ -67,7 +69,7 @@ def test_settings_come_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setenv("SYSTEM_ONE_MODEL", "from-env")
     monkeypatch.setenv("SYSTEM_ONE_BASE_URL", "https://openrouter.ai")
 
-    settings = SystemOne(backend=FakeBackend()).settings
+    settings = SystemOne(using=FakeBackend()).settings
 
     assert settings.model == "from-env"
     assert settings.base_url == "https://openrouter.ai"
@@ -76,20 +78,18 @@ def test_settings_come_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> 
 def test_overrides_beat_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SYSTEM_ONE_MODEL", "from-env")
 
-    assert (
-        SystemOne(backend=FakeBackend(), model="explicit").settings.model == "explicit"
-    )
+    assert SystemOne(using=FakeBackend(), model="explicit").settings.model == "explicit"
 
 
 def test_backend_is_reachable_for_backend_specific_calls() -> None:
     backend = FakeBackend()
 
-    assert SystemOne(backend=backend).backend is backend
+    assert SystemOne(using=backend).backend is backend
 
 
 def test_context_manager_closes_the_backend() -> None:
     backend = FakeBackend()
-    with SystemOne(backend=backend) as agent:
+    with SystemOne(using=backend) as agent:
         agent.ask("hi", QUESTIONS)
 
     assert backend.closed
@@ -99,7 +99,7 @@ def test_async_context_manager_closes_the_backend() -> None:
     backend = FakeAsyncBackend()
 
     async def use() -> None:
-        async with AsyncSystemOne(backend=backend) as agent:
+        async with AsyncSystemOne(using=backend) as agent:
             await agent.ask("hi", QUESTIONS)
 
     asyncio.run(use())

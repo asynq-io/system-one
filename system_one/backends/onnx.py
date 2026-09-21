@@ -12,12 +12,14 @@ import onnxruntime
 import orjson
 from tokenizers import Tokenizer as HFTokenizer
 
+from system_one.catalog import DEFAULT_NAME, sha256_file
 from system_one.errors import SystemOneError
 from system_one.schemas import (
     ROUNDING,
     Answer,
     Choice,
     ChoiceAnswer,
+    Noul,
     NoulAnswer,
     Question,
     Score,
@@ -74,16 +76,43 @@ class Item(NamedTuple):
     qtype: int
 
 
+class Prompt(NamedTuple):
+    ids: list[int]
+    markers: list[int]
+    options: int
+    state_ids: int
+    room: int
+
+
 class Model(NamedTuple):
     session: Any
     tokenizer: Tokenizer
     config: dict[str, Any]
     pad_id: int
+    max_options: int | None
 
 
 def load_config(onnx_dir: Path, model: str) -> dict[str, Any]:
     config: dict[str, Any] = orjson.loads((onnx_dir / f"{model}.json").read_bytes())
     return config
+
+
+def check_graph_digest(graph: Path, config: dict[str, Any]) -> None:
+    """Refuse a calibration that was written for a different graph.
+
+    Hashing is cheap — the weights live in the `.onnx.data` sidecar, so this reads
+    only the few megabytes of graph proto. A hand-placed graph carries no `source`
+    block at all and is left alone.
+    """
+    expected = config.get("source", {}).get("graph_sha256")
+    if expected and expected != sha256_file(graph):
+        message = (
+            f"{graph.name} does not match the graph_sha256 recorded in "
+            f"{graph.stem}.json, so the calibration and the graph came from "
+            f"different places. Re-run `system-one fetch` or `system-one export` "
+            f"to write both together."
+        )
+        raise SystemOneError(message)
 
 
 @lru_cache(maxsize=2)
@@ -94,23 +123,33 @@ def load_model(onnx_dir: Path, model: str) -> Model:
     or a second model on the same agent — cheap.
     """
     graph = onnx_dir / f"{model}.onnx"
-    if not graph.exists():
-        message = (
-            f"No ONNX graph at {graph}. Point SYSTEM_ONE_ONNX_DIR at the directory "
-            f"holding {model}.onnx, {model}.json and tokenizer/."
-        )
-        raise SystemOneError(message)
-    tokenizer: Tokenizer = HFTokenizer.from_file(
-        str(onnx_dir / "tokenizer" / "tokenizer.json")
-    )
+    tokenizer_file = onnx_dir / "tokenizer" / "tokenizer.json"
+    for artifact in (graph, onnx_dir / f"{model}.json", tokenizer_file):
+        if not artifact.exists():
+            message = (
+                f"No ONNX artifact at {artifact}. Point SYSTEM_ONE_ONNX_DIR at the "
+                f"directory holding {model}.onnx, {model}.json and tokenizer/, and "
+                f"SYSTEM_ONE_MODEL at {model!r}; `system-one fetch` writes that layout."
+            )
+            raise SystemOneError(message)
+    config = load_config(onnx_dir, model)
+    check_graph_digest(graph, config)
+    tokenizer: Tokenizer = HFTokenizer.from_file(str(tokenizer_file))
+    # CPU only: the CoreML EP cannot build this graph, and fixed shapes cost ~11x.
+    # See docs/usage/local-model.md, "Apple Silicon".
     session = onnxruntime.InferenceSession(
         str(graph), providers=["CPUExecutionProvider"]
+    )
+    marker_pos = session.get_inputs()[2]
+    max_options = next(
+        (dim for dim in marker_pos.shape[1:] if isinstance(dim, int)), None
     )
     return Model(
         session,
         tokenizer,
-        load_config(onnx_dir, model),
+        config,
         load_specials(tokenizer).pad_id,
+        max_options,
     )
 
 
@@ -143,29 +182,35 @@ def render_criterion(value: Any) -> str:
 
 def render_options(question: Question) -> list[str]:
     """Option texts in label-index order. A `noul` is always `[false, true]`."""
-    if isinstance(question, Choice):
-        return [
-            label if value in (None, "") else f"{label}: {render_criterion(value)}"
-            for label, value in question.criteria.items()
-        ]
-    if isinstance(question, Score):
-        return [
-            f"level {index}: {render_criterion(value)}"
-            for index, value in enumerate(question.criteria)
-        ]
-    criteria = question.criteria
-    outcomes = (
-        (
-            "false",
-            criteria.false if criteria else None,
-            "no, the statement does not hold",
-        ),
-        ("true", criteria.true if criteria else None, "yes, the statement holds"),
-    )
-    return [
-        f"{label}: {default if value in (None, '') else render_criterion(value)}"
-        for label, value, default in outcomes
-    ]
+    match question:
+        case Choice():
+            return [
+                label if value in (None, "") else f"{label}: {render_criterion(value)}"
+                for label, value in question.criteria.items()
+            ]
+        case Score():
+            return [
+                f"level {index}: {render_criterion(value)}"
+                for index, value in enumerate(question.criteria)
+            ]
+        case Noul():
+            criteria = question.criteria
+            outcomes = (
+                (
+                    "false",
+                    criteria.false if criteria else None,
+                    "no, the statement does not hold",
+                ),
+                (
+                    "true",
+                    criteria.true if criteria else None,
+                    "yes, the statement holds",
+                ),
+            )
+            return [
+                f"{label}: {default if value in (None, '') else render_criterion(value)}"
+                for label, value, default in outcomes
+            ]
 
 
 def build_sequence(
@@ -174,13 +219,21 @@ def build_sequence(
     state: State,
     question: Question,
     config: dict[str, Any],
-) -> tuple[list[int], list[int]]:
-    """`[CLS] <type> question: <ins> [SEP] (MASK opt)... [SEP] state [SEP]`, with marker offsets."""
+) -> Prompt:
+    """`[CLS] <type> question: <ins> [SEP] (MASK opt)... [SEP] state [SEP]`.
+
+    Returns the ids plus the numbers that say whether everything fitted: a marker
+    shortfall means the head overflowed, `state_ids > room` means the state did.
+    """
     max_len, head_max_len = config["max_len"], config["head_max_len"]
     head_ids = encode(tokenizer, f"{question.type} question: {question.instructions}")
+    options = render_options(question)
+    # ponytail: options are capped at MAX_OPTION_IDS tokens each and truncated to an
+    # equal share when they do not fit; author-controlled text, so silent unlike the
+    # state. Raise instead if authors start hitting it.
     option_ids = [
         [specials.mask_id, *encode(tokenizer, " " + option)[:MAX_OPTION_IDS]]
-        for option in render_options(question)
+        for option in options
     ]
     budget = head_max_len - sum(len(ids) for ids in option_ids)
     if budget < MIN_OPTION_BUDGET:
@@ -199,26 +252,43 @@ def build_sequence(
     ids.append(specials.sep_id)
 
     room = max(0, max_len - len(ids) - 1)
-    ids += [*encode(tokenizer, serialize_state(state))[:room], specials.sep_id]
-    return ids[:max_len], [marker for marker in markers if marker < max_len]
+    state_ids = encode(tokenizer, serialize_state(state))
+    ids += [*state_ids[:room], specials.sep_id]
+    kept = [marker for marker in markers if marker < max_len]
+    return Prompt(ids[:max_len], kept, len(options), len(state_ids), room)
 
 
 def build_items(
-    tokenizer: Tokenizer, config: dict[str, Any], request: SystemOneInput
+    tokenizer: Tokenizer,
+    config: dict[str, Any],
+    request: SystemOneInput,
+    max_options: int | None = None,
 ) -> list[Item]:
     specials = load_specials(tokenizer)
-    head_max_len = config["head_max_len"]
+    max_len, head_max_len = config["max_len"], config["head_max_len"]
     items = []
     for name, question in request.questions.items():
-        ids, markers = build_sequence(
-            tokenizer, specials, request.state, question, config
-        )
-        if len(markers) != len(render_options(question)):
+        prompt = build_sequence(tokenizer, specials, request.state, question, config)
+        if max_options is not None and prompt.options > max_options:
+            message = (
+                f"Question {name!r} has {prompt.options} options but the graph caps "
+                f"marker_pos at {max_options}. Export a graph with a dynamic options "
+                f"dimension, or ask fewer criteria at a time."
+            )
+            raise SystemOneError(message)
+        if len(prompt.markers) != prompt.options:
             message = (
                 f"Question {name!r} has options exceeding head_max_len={head_max_len}."
             )
             raise SystemOneError(message)
-        items.append(Item(ids, markers, QTYPES[question.type]))
+        if prompt.state_ids > prompt.room:
+            message = (
+                f"Question {name!r}: state is {prompt.state_ids} tokens but "
+                f"max_len={max_len} leaves room for {prompt.room}. Shorten the state "
+                f"or split it across asks."
+            )
+            raise SystemOneError(message)
+        items.append(Item(prompt.ids, prompt.markers, QTYPES[question.type]))
     return items
 
 
@@ -262,26 +332,28 @@ def softmax(logits: Array, scale: float) -> Array:
 
 
 def build_answer(question: Question, probabilities: Array) -> Answer:
-    if isinstance(question, Choice):
-        labels = list(question.criteria)
-        return ChoiceAnswer(
-            choice=labels[int(probabilities.argmax())],
-            probabilities={
-                label: round(float(value), ROUNDING)
-                for label, value in zip(labels, probabilities, strict=True)
-            },
-        )
-    if isinstance(question, Score):
-        levels = np.arange(len(probabilities))
-        return ScoreAnswer(
-            score=round(float((levels * probabilities).sum()), ROUNDING),
-            legend=dict(enumerate(question.criteria)),
-            probabilities={
-                index: round(float(value), ROUNDING)
-                for index, value in enumerate(probabilities)
-            },
-        )
-    return NoulAnswer(noul=round(float(probabilities[1]), ROUNDING))
+    match question:
+        case Choice():
+            labels = list(question.criteria)
+            return ChoiceAnswer(
+                choice=labels[int(probabilities.argmax())],
+                probabilities={
+                    label: round(float(value), ROUNDING)
+                    for label, value in zip(labels, probabilities, strict=True)
+                },
+            )
+        case Score():
+            levels = np.arange(len(probabilities))
+            return ScoreAnswer(
+                score=round(float((levels * probabilities).sum()), ROUNDING),
+                legend=dict(enumerate(question.criteria)),
+                probabilities={
+                    index: round(float(value), ROUNDING)
+                    for index, value in enumerate(probabilities)
+                },
+            )
+        case Noul():
+            return NoulAnswer(noul=round(float(probabilities[1]), ROUNDING))
 
 
 def postprocess(
@@ -311,11 +383,12 @@ class ONNXBackend:
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        load_model(settings.onnx_dir, settings.model)
+        self.model = settings.model or DEFAULT_NAME
+        load_model(settings.onnx_dir, self.model)
 
     def ask(self, request: SystemOneInput) -> SystemOneOutput:
         model = load_model(self.settings.onnx_dir, request.model)
-        items = build_items(model.tokenizer, model.config, request)
+        items = build_items(model.tokenizer, model.config, request, model.max_options)
         logits = model.session.run(None, collate(items, model.pad_id))[0]
         return postprocess(logits, items, request, model.config)
 
@@ -328,6 +401,7 @@ class AsyncONNXBackend:
 
     def __init__(self, settings: Settings) -> None:
         self.backend = ONNXBackend(settings)
+        self.model = self.backend.model
 
     async def ask(self, request: SystemOneInput) -> SystemOneOutput:
         return await asyncio.to_thread(self.backend.ask, request)

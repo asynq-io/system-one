@@ -123,6 +123,11 @@ def test_missing_api_key_is_a_system_one_error() -> None:
         HTTPBackend(Settings())
 
 
+def test_unset_model_falls_back_to_the_hosted_default() -> None:
+    assert backend(transport=None).model == "jev-latest"
+    assert backend(transport=None, model="other").model == "other"
+
+
 def test_unauthorized_is_not_retried() -> None:
     attempts = 0
 

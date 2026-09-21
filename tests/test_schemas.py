@@ -192,3 +192,15 @@ def test_answer_dispatches_on_type() -> None:
 def test_score_criteria_rejects_a_bare_string() -> None:
     with pytest.raises(ValidationError):
         Score(instructions="How bad?", criteria="low")
+
+
+def test_every_answer_type_serializes_its_confidence() -> None:
+    """`confidence` is a field on all three, not a property on one of them."""
+    answers = [
+        NoulAnswer(noul=0.8),
+        ChoiceAnswer(choice="a", probabilities={"a": 0.7, "b": 0.3}),
+        ScoreAnswer(score=0.3, probabilities={0: 0.7, 1: 0.3}),
+    ]
+    for answer in answers:
+        assert "confidence" in answer.model_dump()
+        assert answer.model_dump()["confidence"] == answer.confidence

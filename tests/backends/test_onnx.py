@@ -1,14 +1,20 @@
+import hashlib
+import json
+from pathlib import Path
 from typing import Any, ClassVar, NamedTuple
 
 import numpy as np
+import onnxruntime
 import pytest
 
 from system_one import SystemOneError
+from system_one.backends import onnx as onnx_backend
 from system_one.backends.onnx import (
     Item,
     build_items,
     build_sequence,
     collate,
+    load_model,
     load_specials,
     postprocess,
     render_options,
@@ -77,7 +83,7 @@ def test_noul_options_are_false_then_true() -> None:
 
 def test_markers_point_at_the_mask_before_each_option() -> None:
     tokenizer = StubTokenizer()
-    ids, markers = build_sequence(
+    ids, markers, *_ = build_sequence(
         tokenizer,
         load_specials(tokenizer),
         "hi there",
@@ -102,7 +108,7 @@ def test_tight_option_budget_truncates_every_option_equally() -> None:
     request = make_request({"q": question})
     config = {**CONFIG, "head_max_len": 20}
 
-    ids, markers = build_sequence(
+    ids, markers, *_ = build_sequence(
         tokenizer,
         load_specials(tokenizer),
         request.state,
@@ -236,7 +242,7 @@ def test_build_items_carries_the_question_type() -> None:
 
 def test_json_state_is_serialized_before_tokenizing() -> None:
     tokenizer = StubTokenizer()
-    ids, _ = build_sequence(
+    ids, *_ = build_sequence(
         tokenizer,
         load_specials(tokenizer),
         {"subject": "API down"},
@@ -324,3 +330,125 @@ def test_confidence_rejects_anything_that_is_not_a_distribution(
         choice_confidence(probabilities)
     with pytest.raises(ValueError, match="probabilities must"):
         score_confidence(probabilities)
+
+
+LONG_WORDS = "word " * 600
+
+
+def test_an_overlong_state_is_rejected_instead_of_truncated() -> None:
+    request = make_request(
+        {"topic": {"type": "noul", "instructions": "Down?"}}, LONG_WORDS
+    )
+
+    with pytest.raises(SystemOneError, match=r"'topic': state is 600 tokens"):
+        build_items(StubTokenizer(), CONFIG, request)
+
+
+def test_a_state_that_fits_is_accepted_whole() -> None:
+    request = make_request(
+        {"topic": {"type": "noul", "instructions": "Down?"}}, "word " * 400
+    )
+
+    ids = build_items(StubTokenizer(), CONFIG, request)[0].ids
+
+    assert ids[-401:] == [*range(FIRST_WORD_ID, FIRST_WORD_ID + 400), SEP]
+
+
+def test_options_beyond_the_graphs_ceiling_are_rejected() -> None:
+    request = make_request(
+        {
+            "queue": {
+                "type": "choice",
+                "instructions": "Pick",
+                "criteria": ["a", "b", "c"],
+            }
+        }
+    )
+
+    with pytest.raises(SystemOneError, match="caps marker_pos at 2"):
+        build_items(StubTokenizer(), CONFIG, request, max_options=2)
+
+
+def test_a_dynamic_graph_imposes_no_option_ceiling() -> None:
+    request = make_request(
+        {
+            "queue": {
+                "type": "choice",
+                "instructions": "Pick",
+                "criteria": ["a", "b", "c"],
+            }
+        }
+    )
+
+    assert len(build_items(StubTokenizer(), CONFIG, request, None)[0].markers) == 3
+
+
+class StubInput(NamedTuple):
+    name: str
+    shape: list[Any]
+
+
+class StubSession:
+    """Enough of an `InferenceSession` for `load_model` to read `marker_pos`."""
+
+    def __init__(self, path: str, providers: list[str]) -> None:
+        self.path = path
+
+    def get_inputs(self) -> list[StubInput]:
+        return [
+            StubInput("input_ids", ["batch", "seq"]),
+            StubInput("attention_mask", ["batch", "seq"]),
+            StubInput("marker_pos", ["batch", 2]),
+        ]
+
+
+class StubLoader:
+    @staticmethod
+    def from_file(_: str) -> StubTokenizer:
+        return StubTokenizer()
+
+
+@pytest.fixture
+def artifacts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    (tmp_path / "tokenizer").mkdir()
+    (tmp_path / "tokenizer" / "tokenizer.json").write_text("{}")
+    (tmp_path / "m.onnx").write_text("graph bytes")
+    (tmp_path / "m.json").write_text(json.dumps(CONFIG))
+    monkeypatch.setattr(onnx_backend, "HFTokenizer", StubLoader)
+    monkeypatch.setattr(onnxruntime, "InferenceSession", StubSession)
+    return tmp_path
+
+
+@pytest.mark.parametrize("missing", ["m.onnx", "m.json", "tokenizer/tokenizer.json"])
+def test_every_missing_artifact_names_itself_and_the_env_vars(
+    artifacts: Path, missing: str
+) -> None:
+    (artifacts / missing).unlink()
+
+    with pytest.raises(SystemOneError, match=r"No ONNX artifact at .*SYSTEM_ONE_"):
+        load_model(artifacts, "m")
+
+
+def test_a_calibration_written_for_another_graph_is_rejected(artifacts: Path) -> None:
+    config = {**CONFIG, "source": {"graph_sha256": "0" * 64}}
+    (artifacts / "m.json").write_text(json.dumps(config))
+
+    with pytest.raises(SystemOneError, match="graph_sha256"):
+        load_model(artifacts, "m")
+
+
+def test_a_matching_graph_digest_loads_and_carries_the_option_ceiling(
+    artifacts: Path,
+) -> None:
+    digest = hashlib.sha256((artifacts / "m.onnx").read_bytes()).hexdigest()
+    config = {**CONFIG, "source": {"graph_sha256": digest}}
+    (artifacts / "m.json").write_text(json.dumps(config))
+
+    model = load_model(artifacts, "m")
+
+    assert model.max_options == 2
+    assert model.pad_id == PAD
+
+
+def test_a_calibration_without_a_source_block_loads_unchanged(artifacts: Path) -> None:
+    assert load_model(artifacts, "m").config == CONFIG

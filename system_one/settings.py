@@ -17,7 +17,8 @@ class Settings(BaseSettings):
     )
 
     backend: Literal["http", "onnx"] = "http"
-    model: str = "jev-latest"
+    # None means "whatever the chosen backend serves": `jev-latest` hosted, `laya` local.
+    model: str | None = None
 
     api_key: SecretStr | None = None
     base_url: str = "https://api.typesafe.ai"

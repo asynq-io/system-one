@@ -8,14 +8,15 @@ from typing import Any, cast
 import pytest
 from pydantic import ValidationError
 
-from system_one.cli import (
-    LAYA_CALIBRATION,
+from system_one.catalog import (
+    FETCH_CALIBRATION,
+    FETCH_REPO,
     ExportSpec,
-    fetch,
     fetch_plan,
     load_spec,
-    main,
+    sha256_file,
 )
+from system_one.cli import fetch, main
 
 YAML_SPEC = """
 name: laya-multi
@@ -85,15 +86,18 @@ def test_explicit_patterns_win() -> None:
 
 
 @pytest.mark.parametrize(
-    ("variant", "expected"),
+    ("variant", "name", "expected"),
     [
         (
             "fp32",
+            "laya",
             [("laya.onnx", "laya.onnx"), ("laya.onnx.data", "laya.onnx.data")],
         ),
-        ("int8", [("int8/laya_int8.onnx", "laya.onnx")]),
+        ("int8", "laya", [("int8/laya_int8.onnx", "laya.onnx")]),
+        ("int8", "my-model", [("int8/laya_int8.onnx", "my-model.onnx")]),
         (
             "fp16",
+            "laya",
             [
                 ("fp16_onlygpu_unverified/laya_fp16.onnx", "laya.onnx"),
                 ("fp16_onlygpu_unverified/laya_fp16.onnx.data", "laya.onnx.data"),
@@ -101,8 +105,8 @@ def test_explicit_patterns_win() -> None:
         ),
     ],
 )
-def test_fetch_plan(variant: str, expected: list[tuple[str, str]]) -> None:
-    plan = fetch_plan(variant)
+def test_fetch_plan(variant: str, name: str, expected: list[tuple[str, str]]) -> None:
+    plan = fetch_plan(variant, name)
     assert plan == [*expected, ("tokenizer.json", "tokenizer/tokenizer.json")]
 
 
@@ -159,10 +163,18 @@ def test_fetch_writes_the_bundled_calibration(
     monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
 
     out_dir = tmp_path / "onnx"
-    fetch(out_dir, "int8", repo="me/laya-onnx")
+    fetch(out_dir, "int8")
 
-    assert (
-        out_dir / "laya.onnx"
-    ).read_text() == "me/laya-onnx:int8/laya_int8.onnx@main"
+    graph = out_dir / "laya.onnx"
+    written = json.loads((out_dir / "laya.json").read_text())
+    source = written.pop("source")
+
+    assert graph.read_text() == "rarha/laya-onnx:int8/laya_int8.onnx@main"
     assert (out_dir / "tokenizer" / "tokenizer.json").exists()
-    assert json.loads((out_dir / "laya.json").read_text()) == LAYA_CALIBRATION
+    assert written == FETCH_CALIBRATION
+    assert source["graph_sha256"] == sha256_file(graph)
+    assert source["repo"] == FETCH_REPO
+    assert source["revision"] == "main"
+    assert source["variant"] == "int8"
+    assert source["calibration"] == "system_one.catalog:FETCH_CALIBRATION"
+    assert "weights_sha256" not in source

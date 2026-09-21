@@ -13,7 +13,7 @@ alongside everything else in your `.env`.
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `SYSTEM_ONE_BACKEND` | `http` | `http` or `onnx` |
-| `SYSTEM_ONE_MODEL` | `jev-latest` | |
+| `SYSTEM_ONE_MODEL` | — | the backend's own default: `jev-latest` (http), `laya` (onnx) |
 | `SYSTEM_ONE_API_KEY` | — | required by the `http` backend |
 | `SYSTEM_ONE_BASE_URL` | `https://api.typesafe.ai` | |
 | `SYSTEM_ONE_PATH` | `/v1/systemone` | |

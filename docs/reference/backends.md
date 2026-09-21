@@ -8,6 +8,8 @@
 
 ::: system_one.backends.create_backend
 
+::: system_one.backends.create_async_backend
+
 ## HTTP
 
 ::: system_one.backends.http.HTTPBackend

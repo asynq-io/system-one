@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from system_one.backends import create_backend
+from system_one.backends import create_async_backend, create_backend
 from system_one.schemas import SystemOneInput
 from system_one.settings import Settings
 
@@ -16,22 +16,18 @@ if TYPE_CHECKING:
 
 
 class BaseSystemOne:
-    """Settings resolution and input building, shared by the sync and async agents."""
+    """Settings resolution and input building, shared by the sync and async agents.
 
-    _is_async = False
+    `backend` names the one to build (the `SYSTEM_ONE_BACKEND` value); `using` hands
+    over an already-built one instead, which is how tests and custom providers plug in.
+    """
 
-    def __init__(
-        self, backend: Backend | AsyncBackend | str | None = None, **overrides: Any
-    ) -> None:
-        if isinstance(backend, str):
+    backend: Any  # narrowed to `Backend` / `AsyncBackend` by the two subclasses
+
+    def __init__(self, backend: str | None = None, **overrides: Any) -> None:
+        if backend is not None:
             overrides["backend"] = backend
-            backend = None
         self.settings = Settings(**overrides)
-        self.backend = (
-            backend
-            if backend is not None
-            else create_backend(self.settings, is_async=self._is_async)
-        )
 
     def _input(
         self, state: State, questions: QuestionInput, model: str | None
@@ -39,7 +35,7 @@ class BaseSystemOne:
         return SystemOneInput.model_validate(
             {
                 "state": state,
-                "model": model if model is not None else self.settings.model,
+                "model": model or self.settings.model or self.backend.model,
                 "questions": questions,
             }
         )
@@ -48,7 +44,17 @@ class BaseSystemOne:
 class SystemOne(BaseSystemOne):
     """Ask typed questions about a state and get calibrated answers back."""
 
-    backend: Backend
+    def __init__(
+        self,
+        backend: str | None = None,
+        *,
+        using: Backend | None = None,
+        **overrides: Any,
+    ) -> None:
+        super().__init__(backend, **overrides)
+        self.backend: Backend = (
+            using if using is not None else create_backend(self.settings)
+        )
 
     def ask(
         self, state: State, questions: QuestionInput, *, model: str | None = None
@@ -68,8 +74,17 @@ class SystemOne(BaseSystemOne):
 class AsyncSystemOne(BaseSystemOne):
     """The async counterpart of `SystemOne`: the same `ask`, awaited."""
 
-    _is_async = True
-    backend: AsyncBackend
+    def __init__(
+        self,
+        backend: str | None = None,
+        *,
+        using: AsyncBackend | None = None,
+        **overrides: Any,
+    ) -> None:
+        super().__init__(backend, **overrides)
+        self.backend: AsyncBackend = (
+            using if using is not None else create_async_backend(self.settings)
+        )
 
     async def ask(
         self, state: State, questions: QuestionInput, *, model: str | None = None

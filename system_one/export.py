@@ -21,8 +21,75 @@ import onnxruntime as ort
 import torch
 from safetensors.torch import load_file
 
+from system_one.catalog import sha256_file, source_block
+
 if TYPE_CHECKING:
-    from system_one.cli import ExportSpec
+    from system_one.catalog import ExportSpec
+
+
+class DecisionModel(torch.nn.Module):
+    """Bidirectional transformer encoder backbone + typed decision head."""
+
+    def __init__(
+        self,
+        encoder: torch.nn.Module,
+        head_layers: int = 2,
+        n_act: int = 2,
+        dropout: float = 0.1,
+    ) -> None:
+        super().__init__()
+        self.encoder = encoder
+        d: int = cast("Any", encoder).config.hidden_size
+        layer = torch.nn.TransformerEncoderLayer(
+            d, max(1, d // 64), 4 * d, dropout, batch_first=True, norm_first=True
+        )
+        self.head = (
+            torch.nn.TransformerEncoder(layer, head_layers, enable_nested_tensor=False)
+            if head_layers > 0
+            else None
+        )
+        self.type_emb = torch.nn.Embedding(3, d)
+        self.scorer = torch.nn.Sequential(
+            torch.nn.LayerNorm(d),
+            torch.nn.Linear(d, d),
+            torch.nn.GELU(),
+            torch.nn.Linear(d, 1),
+        )
+        self.act_head = torch.nn.Sequential(
+            torch.nn.Linear(d + 4, 256), torch.nn.GELU(), torch.nn.Linear(256, n_act)
+        )
+        self.register_buffer("temperature", torch.ones(3))
+
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        marker_pos: torch.Tensor,
+        marker_mask: torch.Tensor,
+        qtype: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        h = self.encoder(
+            input_ids=input_ids, attention_mask=attention_mask
+        ).last_hidden_state
+        h = h + self.type_emb(qtype)[:, None, :]
+        if self.head is not None:
+            pad = ~attention_mask.bool()
+            for layer in self.head.layers:
+                h = layer(h, src_key_padding_mask=pad)
+        idx = marker_pos.clamp(min=0)[:, :, None].expand(-1, -1, h.size(-1))
+        markers = torch.gather(h, 1, idx)
+        logits = self.scorer(markers).squeeze(-1).float()
+        logits = logits.masked_fill(~marker_mask, -1e4)
+
+        p = torch.softmax(logits.detach(), -1)
+        k = marker_mask.sum(-1).clamp(min=2).float()
+        entropy = -(p * torch.log(p.clamp_min(1e-9))).sum(-1) / torch.log(k)
+        top2 = p.topk(2, -1).values
+        feats = torch.stack(
+            [top2[:, 0], top2[:, 0] - top2[:, 1], entropy, k / 255.0], -1
+        )
+        act_logits = self.act_head(torch.cat([h[:, 0].float(), feats], -1))
+        return logits, act_logits
 
 
 class DecisionGraph(torch.nn.Module):
@@ -46,18 +113,29 @@ class DecisionGraph(torch.nn.Module):
         return logits, torch.softmax(act.float(), -1)
 
 
-def build_laya(config: dict[str, Any], model_dir: Path) -> torch.nn.Module:
-    """Default builder: the laya reference implementation."""
-    from laya.common import build_model
+def build_decision_model(config: dict[str, Any], model_dir: Path) -> torch.nn.Module:
+    """Default builder: an encoder from `transformers` under the decision head above."""
+    from transformers import AutoConfig, AutoModel
 
-    model = build_model(config, encoder_dir=str(model_dir / "encoder"))
-    model.encoder.config.reference_compile = False
-    return cast("torch.nn.Module", model)
+    loader = cast("Any", AutoModel)
+    encoder_dir = model_dir / "encoder"
+    if encoder_dir.exists():
+        encoder_config = AutoConfig.from_pretrained(str(encoder_dir))  # nosec B615
+        encoder = loader.from_config(encoder_config, attn_implementation="sdpa")
+    else:
+        encoder = loader.from_pretrained(  # nosec B615
+            config["encoder"], attn_implementation="sdpa"
+        )
+    encoder.config.reference_compile = False
+    return DecisionModel(
+        encoder, config.get("head_layers", 2), len(config.get("act_costs", {})) + 1
+    )
 
 
-def resolve_source(spec: ExportSpec) -> Path:
+def resolve_source(spec: ExportSpec) -> tuple[Path, str]:
+    """The directory to read the checkpoint from, and the revision it resolved to."""
     if spec.path is not None:
-        return spec.path
+        return spec.path, spec.revision or "local"
     assert spec.repo is not None
     from huggingface_hub import snapshot_download
 
@@ -66,7 +144,8 @@ def resolve_source(spec: ExportSpec) -> Path:
             spec.repo, revision=spec.revision, allow_patterns=spec.patterns
         )
     )
-    return snapshot / spec.subfolder if spec.subfolder else snapshot
+    model_dir = snapshot / spec.subfolder if spec.subfolder else snapshot
+    return model_dir, snapshot.name
 
 
 def load_graph(
@@ -146,7 +225,7 @@ def report_parity(
 
 def run_export(spec: ExportSpec, out_dir: Path) -> None:
     """Export `spec` into `<out_dir>/<name>.onnx`, `<name>.json` and `tokenizer/`."""
-    model_dir = resolve_source(spec)
+    model_dir, revision = resolve_source(spec)
     graph, config = load_graph(spec, model_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -158,6 +237,14 @@ def run_export(spec: ExportSpec, out_dir: Path) -> None:
         model_dir / spec.tokenizer_dir, out_dir / "tokenizer", dirs_exist_ok=True
     )
     calibration = {key: config[key] for key in spec.calibration}
+    calibration["source"] = source_block(
+        target,
+        repo=spec.repo or str(spec.path),
+        revision=revision,
+        subfolder=spec.subfolder,
+        weights_sha256=sha256_file(model_dir / spec.weights),
+        opset=spec.opset,
+    )
     (out_dir / f"{spec.name}.json").write_text(json.dumps(calibration, indent=1))
 
     report_parity(graph, example, target)
