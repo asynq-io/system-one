@@ -1,0 +1,17 @@
+moderation:
+  description: Moderate a user message before publishing.
+  questions:
+    is_spam:
+      type: noul
+      instructions: Is this message spam?
+    severity:
+      type: score
+      instructions: How severe is the policy violation?
+      criteria: [none, mild, severe]
+
+routing:
+  questions:
+    department:
+      type: choice
+      instructions: Which department should handle this ticket?
+      criteria: [billing, technical, sales]

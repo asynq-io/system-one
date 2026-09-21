@@ -1,0 +1,4 @@
+# mmBERT-base, 322M params, 100+ languages, roughly twice as fast.
+name: laya-multi
+repo: convaiinnovations/laya
+subfolder: multilingual

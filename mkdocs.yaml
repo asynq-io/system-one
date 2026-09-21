@@ -1,0 +1,76 @@
+site_name: "System One"
+site_description: "A vendor-neutral SDK for System One decision models"
+repo_name: asynq-io/system-one
+repo_url: https://github.com/asynq-io/system-one
+
+theme:
+  name: "material"
+  palette:
+    - scheme: default
+      primary: black
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      primary: black
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - search.suggest
+    - search.highlight
+    - content.tabs.link
+    - content.code.copy
+
+nav:
+  - "System One": index.md
+  - "Usage":
+      - "Questions": usage/questions.md
+      - "Answers": usage/answers.md
+      - "Configuration": usage/configuration.md
+      - "Backends": usage/backends.md
+      - "Local model": usage/local-model.md
+      - "Errors": usage/errors.md
+      - "MCP server": usage/mcp.md
+  - "Reference":
+      - "Agent": reference/agent.md
+      - "CLI": reference/cli.md
+      - "Schemas": reference/schemas.md
+      - "Settings": reference/settings.md
+      - "Backends": reference/backends.md
+      - "Errors": reference/errors.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+
+plugins:
+  - search
+  - autorefs
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_root_heading: true
+            show_root_full_path: false
+            show_if_no_docstring: true
+            show_signature_annotations: true
+            separate_signature: true
+            signature_crossrefs: true
+            docstring_style: google
+            members_order: source
+            filters: ["!^_", "!^model_config$"]
+            heading_level: 2

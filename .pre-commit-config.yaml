@@ -3,9 +3,11 @@ repos:
     rev: v5.0.0
     hooks:
       - id: check-added-large-files
+        args: ["--maxkb=1024"]
       - id: check-docstring-first
       - id: check-json
       - id: check-yaml
+        exclude: ^mkdocs\.yaml$  # mkdocs uses !!python/name: tags
       - id: debug-statements
       - id: end-of-file-fixer
       - id: name-tests-test
@@ -29,6 +31,7 @@ repos:
         entry: uv run bandit --skip B101
         language: system
         types: [python]
+        exclude: ^tests/
       - id: mypy
         name: mypy
         entry: uv run mypy .

@@ -33,3 +33,11 @@ notebooks/
 # zed
 .zed/
 .ropeproject/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
+onnx/
+onnx-export/
+onnx-fetch/
+
+site/

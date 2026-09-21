@@ -1,0 +1,3 @@
+# ModernBERT-large, 421M params — laya's default checkpoint.
+name: laya
+repo: convaiinnovations/laya

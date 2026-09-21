@@ -1,0 +1,9 @@
+{
+  "name": "my-model",
+  "path": "checkpoints/my-model",
+  "builder": "my_package.export:build_decision_model",
+  "config_file": "config.json",
+  "weights": "model.safetensors",
+  "tokenizer_dir": "tokenizer",
+  "calibration": ["max_len", "head_max_len", "temperature", "temperature_by_options"]
+}

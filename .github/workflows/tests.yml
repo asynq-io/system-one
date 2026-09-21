@@ -17,6 +17,10 @@ on:
     # cron every week on monday
     - cron: "0 0 * * 1"
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   tests:
     strategy:
@@ -34,7 +38,7 @@ jobs:
         with:
           version: "0.10.6"
       - name: Install dependencies
-        run: uv sync --locked --dev
+        run: uv sync --locked --dev --all-extras
       - name: Ruff
         run: |
           uv run ruff check ./system_one
