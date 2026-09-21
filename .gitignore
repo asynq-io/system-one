@@ -1,0 +1,35 @@
+.DS_Store
+
+# python
+__pycache__/
+*.py[oc]
+.cov*
+*.xml
+# docker
+.env
+volumes
+
+#virtualenvs
+env/
+venv/
+.venv/
+# ide
+.idea/
+vscode/
+
+#pytest
+.pytest_cache/
+htmlcov/
+data/
+report.xml
+tmp/
+
+# mypy
+.mypy_cache
+# ruff
+.ruff_cache
+
+notebooks/
+# zed
+.zed/
+.ropeproject/
