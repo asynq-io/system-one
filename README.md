@@ -10,17 +10,143 @@
 
 # system-one
 
-System One Models Python SDK
+A vendor-neutral SDK for System One models. One contract — `ask(state, questions)
+-> answers` — over three question primitives (`noul`, `choice`, `score`).
+Switching providers is an environment variable, not a code change.
+
+These are decision models, not chat models: no messages, no streaming, no
+temperature.
 
 ## Installation
 
 ```shell
-pip install system-one
+pip install "system-one[http]"   # hosted providers
+pip install "system-one[onnx]"   # local, in-process
 ```
+
+## Usage
+
+```python
+from system_one import SystemOne
+
+with SystemOne() as agent:
+    response = agent.ask(
+        "Customer is furious about a double charge.",
+        {
+            "urgent": {"type": "noul", "instructions": "Does this need a human now?"},
+            "topic": {
+                "type": "choice",
+                "instructions": "Which queue?",
+                "criteria": ["billing", "technical", "other"],
+            },
+            "severity": {
+                "type": "score",
+                "instructions": "How severe?",
+                "criteria": ["minor", "normal", "major", "critical"],
+            },
+        },
+    )
+
+print(response.nouls["urgent"].noul, response.nouls["urgent"].confidence)
+print(response.choices["topic"].choice, response.choices["topic"].probabilities)
+print(response.scores["severity"].score)
+```
+
+`AsyncSystemOne` has the same shape and the same method names, awaited:
+`await agent.ask(...)`, `await agent.close()`, `async with`.
+
+## Configuration
+
+All settings come from `SYSTEM_ONE_*` environment variables or a `.env` file,
+and any of them can be overridden per agent: `SystemOne(model="...", timeout=30)`.
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `SYSTEM_ONE_BACKEND` | `http` | `http` or `onnx` |
+| `SYSTEM_ONE_MODEL` | `jev-latest` | |
+| `SYSTEM_ONE_API_KEY` | — | required by the `http` backend |
+| `SYSTEM_ONE_BASE_URL` | `https://api.typesafe.ai` | |
+| `SYSTEM_ONE_PATH` | `/v1/systemone` | |
+| `SYSTEM_ONE_TIMEOUT` | `10.0` | seconds |
+| `SYSTEM_ONE_MAX_RETRIES` | `2` | `408`, `429`, `5xx` only |
+| `SYSTEM_ONE_ONNX_DIR` | `onnx` | holds `<model>.onnx`, `<model>.json`, `tokenizer/` |
+
+Three providers, one script:
+
+```shell
+# typesafe / jev — the defaults
+SYSTEM_ONE_API_KEY=…
+
+# OpenRouter — same backend, same body, different endpoint
+SYSTEM_ONE_API_KEY=…
+SYSTEM_ONE_BASE_URL=https://openrouter.ai
+SYSTEM_ONE_PATH=/api/alpha/decisions
+SYSTEM_ONE_MODEL=…
+
+# local ONNX — no network, no API key; reads onnx/$SYSTEM_ONE_MODEL.onnx
+SYSTEM_ONE_BACKEND=onnx
+```
+
+Backend-specific calls stay reachable through `agent.backend`, for example
+`agent.backend.models()` on the HTTP backend. Tests can inject one directly:
+`SystemOne(backend=FakeBackend())`.
+
+## Running locally
+
+The `onnx` backend runs a decision model in-process — no network, no API key,
+no torch at runtime. The weights come from
+[laya](https://github.com/receptron/laya)
+([`convaiinnovations/laya`](https://huggingface.co/convaiinnovations/laya)),
+in the layout the backend reads:
+
+```shell
+pip install "system-one[onnx,hub]"
+system-one fetch --out-dir onnx                    # --variant fp32|int8|fp16, --repo <hf-repo>
+```
+
+That writes `onnx/laya.onnx` (≈1.6 GB fp32), `onnx/laya.json` and
+`onnx/tokenizer/` — no torch, no tracing. To use another laya variant or your
+own model, write a spec and run
+`system-one export examples/export/laya-english.yaml`; that needs
+`system-one[export]`. `SYSTEM_ONE_MODEL` still defaults to `jev-latest` — the
+hosted provider's model — so a local run has to set it. Nothing leaves the
+machine:
+
+```shell
+SYSTEM_ONE_BACKEND=onnx
+SYSTEM_ONE_ONNX_DIR=onnx   # default
+SYSTEM_ONE_MODEL=laya      # the file base name in that directory
+```
+
+```python
+with SystemOne("onnx", model="laya") as agent:
+    response = agent.ask("The site is down.", {"outage": {"type": "noul", "instructions": "Is there an outage?"}})
+```
+
+Full walkthrough — fetch vs export, variants, several models in one directory,
+verification, troubleshooting: [docs/usage/local-model.md](docs/usage/local-model.md).
+
+## Errors
+
+```
+SystemOneError                 # catch this
+├── APIError                   # non-2xx; .status .body .retry_after
+│   └── AuthenticationError    # 401/403, never retried
+└── APIConnectionError
+    └── APITimeoutError
+```
+
+A malformed response body raises pydantic's `ValidationError`.
 
 ## Development
 
 ```shell
-uv sync
+uv sync --all-extras
 uv run pytest
+uv run pre-commit run --all-files
 ```
+
+Tests needing the ONNX artifacts skip themselves when `onnx/laya.onnx` is
+absent (`SYSTEM_ONE_ONNX_DIR` and `SYSTEM_ONE_MODEL` override where they look).
+`scripts/check_onnx_parity.py` checks the graph against the reference `laya`
+implementation and needs the `export` extra plus the real weights.

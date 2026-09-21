@@ -5,8 +5,8 @@ description = "System One Models Python SDK"
 readme = "README.md"
 requires-python = ">=3.10,<4.0"
 license = "Apache-2.0"
-keywords = []
-authors = []
+keywords = ["python", "mcp", "jev", "laya", "system", "one"]
+authors = [{ name = "RaRhAeu", email = "rarha_eu@protonmail.com" }]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -25,7 +25,37 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed",
 ]
-dependencies = []
+dependencies = [
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
+]
+
+[project.optional-dependencies]
+http = ["httpx2>=2.13.0"]
+onnx = [
+    "onnxruntime>=1.22,<1.24",
+    "tokenizers>=0.21",
+    "numpy>=1.26",
+    "orjson>=3.12.0",
+]
+mcp = [
+    "fastmcp>=4.0",
+    "pyyaml>=6",
+]
+hub = ["huggingface_hub>=0.26"]
+export = [
+    "torch>=2.6",
+    "safetensors>=0.4",
+    "onnx>=1.23",
+    "onnxscript>=0.7.2",
+    "onnxruntime<1.24",
+    "system-one[hub]",
+]
+all = ["system-one[http,onnx,mcp,hub]"]
+
+[project.scripts]
+system-one = "system_one.cli:main"
+system-one-mcp = "system_one.mcp:main"
 
 [project.urls]
 Documentation = "https://github.com/asynq-io/system-one#readme"
@@ -38,9 +68,12 @@ dev = [
     {include-group = "test"},
     {include-group = "docs"},
     "ipython",
+    "laya>=0.3.4",
+    "typesafe-sdk>=0.7.0",
 ]
 
 test = [
+    "numpy>=1.26",
     "pytest",
     "pytest-cov",
     "pytest-sugar",
@@ -61,7 +94,6 @@ docs = [
     "mkdocstrings[python]",
     "watchdog",
 ]
-
 [tool.uv.build-backend]
 module-root = ""
 module-name = "system_one"
@@ -124,10 +156,16 @@ ignore = [
     "TRY003",
 ]
 
+[tool.ruff.lint.flake8-type-checking]
+runtime-evaluated-base-classes = ["pydantic.BaseModel", "pydantic_settings.BaseSettings"]
+
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101", "ANN001", "ANN002", "ANN003", "ANN201", "ANN202", "SLF001", "PLR2004", "ARG002", "FBT001"]
+"tests/*" = ["S101", "ANN001", "ANN002", "ANN003", "ANN201", "ANN202", "SLF001", "PLR2004", "ARG002", "FBT001", "PLC0415"]
 "examples/*" = ["S101", "ANN001", "ANN201", "INP001", "T201", "EM101", "TRY003"]
+"scripts/*" = ["S101", "INP001", "T201", "EM101", "EM102", "TRY003", "SLF001", "PLR2004"]
 "system_one/*" = ["PLC0415"]
+"system_one/cli.py" = ["PLC0415", "T201"]
+"system_one/export.py" = ["PLC0415", "T201", "S101"]
 
 [tool.bandit]
 skips = ['B101']

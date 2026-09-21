@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "graft": {
+      "command": "graft",
+      "args": [
+        "mcp"
+      ]
+    },
+    "test-mcp": {
+      "type": "http",
+      "url": "http://localhost:8000/mcp"
+    }
+  }
+}
