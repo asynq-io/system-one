@@ -11,14 +11,12 @@ from system_one import (
     APIError,
     APITimeoutError,
     AuthenticationError,
-    Settings,
-    SystemOneError,
+    HTTPConfig,
+    OpenRouterConfig,
+    TypesafeConfig,
 )
 from system_one.backends.http import AsyncHTTPBackend, HTTPBackend, retry_after
 from system_one.schemas import SystemOneInput
-
-TYPESAFE = {"base_url": "https://api.typesafe.ai", "path": "/v1/systemone"}
-OPENROUTER = {"base_url": "https://openrouter.ai", "path": "/api/alpha/decisions"}
 
 QUESTIONS: dict[str, Any] = {
     "urgent": {"type": "noul", "instructions": "Does this need a human now?"},
@@ -49,14 +47,16 @@ def make_request(model: str = "jev-latest") -> SystemOneInput:
     )
 
 
+def config(**overrides: Any) -> HTTPConfig:
+    return TypesafeConfig(api_key=SecretStr("secret"), **overrides)
+
+
 def backend(*, transport: Any, **overrides: Any) -> HTTPBackend:
-    settings = Settings(api_key=SecretStr("secret"), **overrides)
-    return HTTPBackend(settings, transport=transport)
+    return HTTPBackend(config(**overrides), transport=transport)
 
 
 def async_backend(*, transport: Any, **overrides: Any) -> AsyncHTTPBackend:
-    settings = Settings(api_key=SecretStr("secret"), **overrides)
-    return AsyncHTTPBackend(settings, transport=transport)
+    return AsyncHTTPBackend(config(**overrides), transport=transport)
 
 
 def json_transport(
@@ -96,9 +96,12 @@ def test_ask_sends_the_contract_body_and_parses_the_response() -> None:
 def test_both_vendor_configs_produce_the_same_response() -> None:
     urls = []
     answers = []
-    for config in (TYPESAFE, OPENROUTER):
+    for preset in (TypesafeConfig, OpenRouterConfig):
         sent: list[httpx2.Request] = []
-        client = backend(transport=json_transport(ANSWER_BODY, sent), **config)
+        client = HTTPBackend(
+            preset(api_key=SecretStr("secret")),
+            transport=json_transport(ANSWER_BODY, sent),
+        )
         answers.append(client.ask(make_request()).model_dump())
         urls.append(str(sent[0].url))
         assert json.loads(sent[0].content) == json.loads(sent[0].content)
@@ -111,19 +114,38 @@ def test_both_vendor_configs_produce_the_same_response() -> None:
 
 
 def test_openrouter_shaped_answer_gets_confidence_filled() -> None:
-    response = backend(transport=json_transport(ANSWER_BODY), **OPENROUTER).ask(
-        make_request()
-    )
+    response = HTTPBackend(
+        OpenRouterConfig(api_key=SecretStr("secret")),
+        transport=json_transport(ANSWER_BODY),
+    ).ask(make_request())
 
     assert response.choices["topic"].confidence == 1.0
 
 
-def test_missing_api_key_is_a_system_one_error() -> None:
-    with pytest.raises(SystemOneError, match="SYSTEM_ONE_API_KEY"):
-        HTTPBackend(Settings())
+def test_missing_api_key_is_a_validation_error() -> None:
+    with pytest.raises(ValidationError, match="api_key"):
+        TypesafeConfig()  # type: ignore[call-arg]
 
 
-def test_unset_model_falls_back_to_the_hosted_default() -> None:
+def test_custom_http_needs_a_base_url_and_model() -> None:
+    with pytest.raises(ValidationError, match="base_url"):
+        HTTPConfig()  # type: ignore[call-arg]
+
+
+def test_custom_http_sends_no_authorization_header_without_a_key() -> None:
+    sent: list[httpx2.Request] = []
+    custom = HTTPConfig(base_url="https://my-host", model="mine")
+    client = HTTPBackend(custom, transport=json_transport(ANSWER_BODY, sent))
+    client.ask(make_request())
+
+    assert str(sent[0].url) == "https://my-host/v1/systemone"
+    assert "authorization" not in sent[0].headers
+
+
+def test_unset_model_falls_back_to_the_provider_preset() -> None:
+    assert OpenRouterConfig(api_key=SecretStr("k")).base_url == "https://openrouter.ai"
+    assert OpenRouterConfig(api_key=SecretStr("k")).path == "/api/alpha/decisions"
+    assert OpenRouterConfig(api_key=SecretStr("k")).model == "typesafe/jev-latest"
     assert backend(transport=None).model == "jev-latest"
     assert backend(transport=None, model="other").model == "other"
 
@@ -193,21 +215,6 @@ def test_timeout_becomes_an_api_timeout_error(monkeypatch: pytest.MonkeyPatch) -
 def test_malformed_body_raises_a_validation_error() -> None:
     with pytest.raises(ValidationError):
         backend(transport=json_transport({"model": "jev-latest"})).ask(make_request())
-
-
-def test_models_lists_the_account_models() -> None:
-    body = {
-        "models": [
-            {
-                "name": "jev-latest",
-                "description": "General-purpose system one model.",
-                "release_date": "2026-09-15",
-            }
-        ]
-    }
-    models = backend(transport=json_transport(body)).models()
-
-    assert [model.name for model in models] == ["jev-latest"]
 
 
 def test_async_ask_matches_the_sync_result() -> None:

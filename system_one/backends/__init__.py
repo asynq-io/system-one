@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, TypeVar
+
+from system_one.errors import SystemOneError
+from system_one.settings import BackendConfig, HTTPConfig, ONNXConfig
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from system_one.schemas import SystemOneInput, SystemOneOutput
     from system_one.settings import Settings
+
+Config = TypeVar("Config", bound=BackendConfig)
 
 EXTRA_HINTS = {
     "http": "The http backend needs httpx2: pip install 'system-one[http]'",
@@ -48,23 +53,42 @@ def _hint(name: str) -> Iterator[None]:
         raise ImportError(EXTRA_HINTS[name]) from exc
 
 
-def create_backend(settings: Settings) -> Backend:
+def _resolve(
+    settings: Settings, config: BackendConfig | None, default: type[Config]
+) -> Config:
+    """The config to build with: the given one, or one read from the environment."""
+    # mypy cannot see that pydantic-settings fills the required fields from env.
+    config = default() if config is None else config  # type: ignore[call-arg]
+    if not isinstance(config, default):
+        message = (
+            f"{type(config).__name__} does not configure the "
+            f"{settings.backend!r} backend."
+        )
+        raise SystemOneError(message)
+    if settings.model is not None:
+        config = config.model_copy(update={"model": settings.model})
+    return config
+
+
+def create_backend(settings: Settings, config: BackendConfig | None = None) -> Backend:
     """The sync backend named by `settings.backend`."""
     if settings.backend == "onnx":
         with _hint("onnx"):
             from system_one.backends.onnx import ONNXBackend
-        return ONNXBackend(settings)
+        return ONNXBackend(_resolve(settings, config, ONNXConfig))
     with _hint("http"):
         from system_one.backends.http import HTTPBackend
-    return HTTPBackend(settings)
+    return HTTPBackend(_resolve(settings, config, HTTPConfig))
 
 
-def create_async_backend(settings: Settings) -> AsyncBackend:
+def create_async_backend(
+    settings: Settings, config: BackendConfig | None = None
+) -> AsyncBackend:
     """The async backend named by `settings.backend`."""
     if settings.backend == "onnx":
         with _hint("onnx"):
             from system_one.backends.onnx import AsyncONNXBackend
-        return AsyncONNXBackend(settings)
+        return AsyncONNXBackend(_resolve(settings, config, ONNXConfig))
     with _hint("http"):
         from system_one.backends.http import AsyncHTTPBackend
-    return AsyncHTTPBackend(settings)
+    return AsyncHTTPBackend(_resolve(settings, config, HTTPConfig))

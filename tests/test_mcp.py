@@ -120,7 +120,8 @@ def test_generic_tool_only_without_config_or_with_flag(tmp_path: Path) -> None:
 def test_factory_reads_its_config_flag_from_argv(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("SYSTEM_ONE_API_KEY", "fake")
+    monkeypatch.setenv("SYSTEM_ONE_BASE_URL", "https://example.test")
+    monkeypatch.setenv("SYSTEM_ONE_MODEL", "fake-latest")
     monkeypatch.setattr(
         sys, "argv", ["fastmcp", "run", "--config", str(write_config(tmp_path))]
     )

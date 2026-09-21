@@ -58,38 +58,38 @@ print(response.scores["severity"].score)
 ## Configuration
 
 All settings come from `SYSTEM_ONE_*` environment variables or a `.env` file,
-and any of them can be overridden per agent: `SystemOne(model="...", timeout=30)`.
+and any of them can be set in code instead: `SystemOne(HTTPConfig(..., timeout=30))`.
 
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `SYSTEM_ONE_BACKEND` | `http` | `http` or `onnx` |
-| `SYSTEM_ONE_MODEL` | — | the backend's own default: `jev-latest` (http), `laya` (onnx) |
-| `SYSTEM_ONE_API_KEY` | — | required by the `http` backend |
-| `SYSTEM_ONE_BASE_URL` | `https://api.typesafe.ai` | |
+| `SYSTEM_ONE_MODEL` | — | overrides whatever the config would use |
+| `SYSTEM_ONE_BASE_URL` | — | required by plain `http`; the presets set their own |
 | `SYSTEM_ONE_PATH` | `/v1/systemone` | |
+| `SYSTEM_ONE_API_KEY` | — | required by `TypesafeConfig` / `OpenRouterConfig` |
 | `SYSTEM_ONE_TIMEOUT` | `10.0` | seconds |
 | `SYSTEM_ONE_MAX_RETRIES` | `2` | `408`, `429`, `5xx` only |
 | `SYSTEM_ONE_ONNX_DIR` | `onnx` | holds `<model>.onnx`, `<model>.json`, `tokenizer/` |
 
-Three providers, one script:
+Vendor choice is a config class, not a string:
 
-```shell
-# typesafe / jev — the defaults
-SYSTEM_ONE_API_KEY=…
+```python
+from system_one import (
+    HTTPConfig,
+    ONNXConfig,
+    OpenRouterConfig,
+    SystemOne,
+    TypesafeConfig,
+)
 
-# OpenRouter — same backend, same body, different endpoint
-SYSTEM_ONE_API_KEY=…
-SYSTEM_ONE_BASE_URL=https://openrouter.ai
-SYSTEM_ONE_PATH=/api/alpha/decisions
-SYSTEM_ONE_MODEL=…
-
-# local ONNX — no network, no API key; reads onnx/$SYSTEM_ONE_MODEL.onnx
-SYSTEM_ONE_BACKEND=onnx
+SystemOne(TypesafeConfig())  # hosted jev, $SYSTEM_ONE_API_KEY
+SystemOne(OpenRouterConfig())  # same body, different endpoint
+SystemOne(HTTPConfig(base_url="https://my-host", model="mine"))
+SystemOne(ONNXConfig())  # local graph, no network, no key
 ```
 
-Backend-specific calls stay reachable through `agent.backend`, for example
-`agent.backend.models()` on the HTTP backend. Tests can inject one directly:
-`SystemOne(using=FakeBackend())`.
+Backend-specific calls stay reachable through `agent.backend`. Tests can inject
+one directly: `SystemOne(using=FakeBackend())`.
 
 ## Running locally
 
@@ -119,7 +119,7 @@ SYSTEM_ONE_MODEL=laya      # the file base name in that directory
 ```
 
 ```python
-with SystemOne("onnx", model="laya") as agent:
+with SystemOne(ONNXConfig(model="laya")) as agent:
     response = agent.ask(
         "The site is down.",
         {"outage": {"type": "noul", "instructions": "Is there an outage?"}},

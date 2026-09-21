@@ -15,7 +15,6 @@ from system_one.schemas import (
     Answer,
     Choice,
     ChoiceAnswer,
-    ModelInfo,
     Noul,
     NoulAnswer,
     NoulCriteria,
@@ -26,7 +25,13 @@ from system_one.schemas import (
     SystemOneOutput,
     Usage,
 )
-from system_one.settings import Settings
+from system_one.settings import (
+    HTTPConfig,
+    ONNXConfig,
+    OpenRouterConfig,
+    Settings,
+    TypesafeConfig,
+)
 
 __version__ = version("system-one")
 
@@ -40,10 +45,12 @@ __all__ = [
     "AuthenticationError",
     "Choice",
     "ChoiceAnswer",
-    "ModelInfo",
+    "HTTPConfig",
     "Noul",
     "NoulAnswer",
     "NoulCriteria",
+    "ONNXConfig",
+    "OpenRouterConfig",
     "Question",
     "Score",
     "ScoreAnswer",
@@ -52,6 +59,7 @@ __all__ = [
     "SystemOneError",
     "SystemOneInput",
     "SystemOneOutput",
+    "TypesafeConfig",
     "Usage",
     "__version__",
 ]

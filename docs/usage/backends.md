@@ -1,7 +1,8 @@
 # Backends
 
 A backend is the thing that actually answers. `SystemOne` owns one and exposes
-it as `agent.backend`; which one you get is `SYSTEM_ONE_BACKEND`.
+it as `agent.backend`; which one you get is the config you pass, or
+`SYSTEM_ONE_BACKEND` when you pass none.
 
 | Backend | Extra | What it does |
 | --- | --- | --- |
@@ -28,34 +29,33 @@ That is the whole contract. Anything implementing it can be handed to an agent.
 
 ## HTTP
 
-```shell
-SYSTEM_ONE_API_KEY=…
-SYSTEM_ONE_BASE_URL=https://api.typesafe.ai   # default
-SYSTEM_ONE_PATH=/v1/systemone                 # default
+One class per vendor, each an `HTTPConfig` with its endpoint filled in:
+
+```python
+SystemOne(TypesafeConfig())  # https://api.typesafe.ai/v1/systemone
+SystemOne(OpenRouterConfig())  # https://openrouter.ai/api/alpha/decisions
+SystemOne(HTTPConfig(base_url="https://my-host", model="mine"))
 ```
+
+The presets require `SYSTEM_ONE_API_KEY` (or `api_key=`); a plain `HTTPConfig`
+sends no `Authorization` header without one. Every field also reads its
+`SYSTEM_ONE_*` variable, so `SystemOne()` alone needs `SYSTEM_ONE_BASE_URL` and
+`SYSTEM_ONE_MODEL`.
 
 Retries are built in: `408`, `429` and `5xx` are retried up to
 `SYSTEM_ONE_MAX_RETRIES` times with exponential backoff, honouring the
 `Retry-After` header when the server sends one. `401` and `403` are never
 retried — see [Errors](errors.md).
 
-Backend-specific calls stay reachable through `agent.backend`:
-
-```python
-for model in agent.backend.models():
-    print(model.name, model.release_date, model.description)
-```
-
-!!! warning
-    `models()` exists on the HTTP backend only. Reach for `agent.backend` when
-    you have decided which backend you are on.
+Backend-specific calls stay reachable through `agent.backend`.
 
 ## ONNX
 
-```shell
-SYSTEM_ONE_BACKEND=onnx
-SYSTEM_ONE_ONNX_DIR=onnx     # default
+```python
+SystemOne(ONNXConfig(onnx_dir="onnx", model="laya"))  # both are the defaults
 ```
+
+or `SYSTEM_ONE_BACKEND=onnx` with `SYSTEM_ONE_ONNX_DIR` / `SYSTEM_ONE_MODEL`.
 
 The directory must hold three things for the configured model:
 
@@ -80,8 +80,8 @@ The async ONNX backend runs the same synchronous session off the event loop, so
 
 ## Injecting your own
 
-Pass any object satisfying the protocol as the first argument. Tests use this to
-avoid the network entirely:
+Pass any object satisfying the protocol as `using=`. Tests use this to avoid the
+network entirely:
 
 ```python
 class FakeBackend:
@@ -99,5 +99,5 @@ class FakeBackend:
 agent = SystemOne(using=FakeBackend())
 ```
 
-Settings are still resolved when you inject a backend, so `agent.settings.model`
+Settings are still resolved when you inject a backend, so `SYSTEM_ONE_MODEL`
 still supplies the default model for `ask`.

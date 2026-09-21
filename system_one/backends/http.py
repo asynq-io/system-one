@@ -1,4 +1,4 @@
-"""One HTTP backend for every hosted vendor: same JSON body, only `base_url` and `path` differ."""
+"""One HTTP backend for every vendor: same JSON body, the config carries the endpoint."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ import time
 from typing import TYPE_CHECKING, Any
 
 import httpx2
-from pydantic import TypeAdapter
 
 from system_one import __version__
 from system_one.errors import (
@@ -20,24 +19,20 @@ from system_one.errors import (
     AuthenticationError,
     SystemOneError,
 )
-from system_one.schemas import ModelInfo, SystemOneOutput
+from system_one.schemas import SystemOneOutput
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from system_one.schemas import SystemOneInput
-    from system_one.settings import Settings
+    from system_one.settings import HTTPConfig
 
 logger = logging.getLogger("system_one")
 
-DEFAULT_MODEL = "jev-latest"
-MODELS_PATH = "/v1/models"
 MAX_BACKOFF = 5.0
 INITIAL_BACKOFF = 0.5
 MAX_ERROR_BODY = 200
 AUTH_STATUSES = frozenset({401, 403})
-
-model_list_adapter: TypeAdapter[list[ModelInfo]] = TypeAdapter(list[ModelInfo])
 
 
 def retry_after(headers: Mapping[str, str]) -> float | None:
@@ -88,31 +83,32 @@ def transport_error(request: httpx2.Request, exc: httpx2.HTTPError) -> SystemOne
 class BaseHTTPBackend:
     """Request building, error mapping and retry pacing, shared by both flavours."""
 
-    def __init__(self, settings: Settings, *, transport: Any = None) -> None:
-        if settings.api_key is None:
-            raise SystemOneError(
-                "No API key. Set SYSTEM_ONE_API_KEY to use the http backend."
-            )
-        self.settings = settings
-        self.model = settings.model or DEFAULT_MODEL
+    def __init__(self, config: HTTPConfig, *, transport: Any = None) -> None:
+        self.config = config
+        self.model = config.model
+        self.base_url = config.base_url.rstrip("/")
+        self.path = config.path
         self._transport = transport
         self._headers = {
-            "Authorization": f"Bearer {settings.api_key.get_secret_value()}",
             "Content-Type": "application/json",
             "Accept": "application/json",
             "User-Agent": f"system-one/{__version__}",
         }
+        if config.api_key is not None:
+            self._headers["Authorization"] = (
+                f"Bearer {config.api_key.get_secret_value()}"
+            )
 
     def _build(self, method: str, path: str, body: str | None = None) -> httpx2.Request:
-        url = self.settings.base_url.rstrip("/") + path
+        url = self.base_url + path
         logger.debug("%s %s", method, url)
         return httpx2.Request(method, url, headers=self._headers, content=body)
 
     def _ask_request(self, request: SystemOneInput) -> httpx2.Request:
-        return self._build("POST", self.settings.path, request.model_dump_json())
+        return self._build("POST", self.path, request.model_dump_json())
 
     def _delay_or_reraise(self, error: SystemOneError, attempt: int) -> float:
-        if attempt >= self.settings.max_retries or not is_retryable(error):
+        if attempt >= self.config.max_retries or not is_retryable(error):
             raise error
         after = error.retry_after if isinstance(error, APIError) else None
         return backoff(attempt, after)
@@ -121,17 +117,13 @@ class BaseHTTPBackend:
 class HTTPBackend(BaseHTTPBackend):
     """Talks to any vendor implementing the System One contract over HTTP."""
 
-    def __init__(self, settings: Settings, *, transport: Any = None) -> None:
-        super().__init__(settings, transport=transport)
-        self._client = httpx2.Client(timeout=settings.timeout, transport=transport)
+    def __init__(self, config: HTTPConfig, *, transport: Any = None) -> None:
+        super().__init__(config, transport=transport)
+        self._client = httpx2.Client(timeout=config.timeout, transport=transport)
 
     def ask(self, request: SystemOneInput) -> SystemOneOutput:
         response = self._send(self._ask_request(request))
         return SystemOneOutput.model_validate_json(response.content)
-
-    def models(self) -> list[ModelInfo]:
-        response = self._send(self._build("GET", MODELS_PATH))
-        return model_list_adapter.validate_python(response.json()["models"])
 
     def close(self) -> None:
         self._client.close()
@@ -157,19 +149,15 @@ class HTTPBackend(BaseHTTPBackend):
 
 
 class AsyncHTTPBackend(BaseHTTPBackend):
-    """The async counterpart of `HTTPBackend`, sharing its settings and retry policy."""
+    """The async counterpart of `HTTPBackend`, sharing its config and retry policy."""
 
-    def __init__(self, settings: Settings, *, transport: Any = None) -> None:
-        super().__init__(settings, transport=transport)
-        self._client = httpx2.AsyncClient(timeout=settings.timeout, transport=transport)
+    def __init__(self, config: HTTPConfig, *, transport: Any = None) -> None:
+        super().__init__(config, transport=transport)
+        self._client = httpx2.AsyncClient(timeout=config.timeout, transport=transport)
 
     async def ask(self, request: SystemOneInput) -> SystemOneOutput:
         response = await self._send(self._ask_request(request))
         return SystemOneOutput.model_validate_json(response.content)
-
-    async def models(self) -> list[ModelInfo]:
-        response = await self._send(self._build("GET", MODELS_PATH))
-        return model_list_adapter.validate_python(response.json()["models"])
 
     async def close(self) -> None:
         await self._client.aclose()

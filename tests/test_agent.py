@@ -2,8 +2,15 @@ import asyncio
 import importlib.util
 
 import pytest
+from pydantic import SecretStr, ValidationError
 
-from system_one import AsyncSystemOne, Settings, SystemOne, SystemOneError
+from system_one import (
+    AsyncSystemOne,
+    OpenRouterConfig,
+    Settings,
+    SystemOne,
+    TypesafeConfig,
+)
 from system_one.schemas import SystemOneInput, SystemOneOutput
 
 QUESTIONS = {"urgent": {"type": "noul", "instructions": "Does this need a human?"}}
@@ -67,12 +74,30 @@ def test_per_call_model_overrides_settings() -> None:
 
 def test_settings_come_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SYSTEM_ONE_MODEL", "from-env")
-    monkeypatch.setenv("SYSTEM_ONE_BASE_URL", "https://openrouter.ai")
+    monkeypatch.setenv("SYSTEM_ONE_BACKEND", "onnx")
 
     settings = SystemOne(using=FakeBackend()).settings
 
     assert settings.model == "from-env"
-    assert settings.base_url == "https://openrouter.ai"
+    assert settings.backend == "onnx"
+
+
+def test_config_selects_the_provider_preset(monkeypatch: pytest.MonkeyPatch) -> None:
+    from system_one.backends.http import HTTPBackend
+
+    monkeypatch.setenv("SYSTEM_ONE_API_KEY", "secret")  # OpenRouterConfig reads it
+    backend = SystemOne(OpenRouterConfig()).backend  # type: ignore[call-arg]
+
+    assert isinstance(backend, HTTPBackend)
+    assert backend.base_url == "https://openrouter.ai"
+    assert backend.path == "/api/alpha/decisions"
+    assert backend.model == "typesafe/jev-latest"
+
+
+def test_the_model_override_beats_the_config_preset() -> None:
+    config = OpenRouterConfig(api_key=SecretStr("secret"))
+
+    assert SystemOne(config, model="x").backend.model == "x"
 
 
 def test_overrides_beat_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -107,9 +132,9 @@ def test_async_context_manager_closes_the_backend() -> None:
     assert backend.closed
 
 
-def test_http_backend_needs_an_api_key() -> None:
-    with pytest.raises(SystemOneError, match="SYSTEM_ONE_API_KEY"):
-        SystemOne()
+def test_hosted_backend_needs_an_api_key() -> None:
+    with pytest.raises(ValidationError, match="api_key"):
+        SystemOne(TypesafeConfig())  # type: ignore[call-arg]
 
 
 @pytest.mark.skipif(

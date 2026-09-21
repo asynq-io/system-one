@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from system_one import Settings, SystemOne, SystemOneError
+from system_one import ONNXConfig, SystemOne, SystemOneError
 from system_one.backends.onnx import (
     AsyncONNXBackend,
     ONNXBackend,
@@ -52,7 +52,7 @@ QUESTIONS: dict[str, Any] = {
 
 @pytest.fixture(scope="module")
 def backend() -> ONNXBackend:
-    return ONNXBackend(Settings(backend="onnx", onnx_dir=ONNX_DIR, model=MODEL))
+    return ONNXBackend(ONNXConfig(onnx_dir=ONNX_DIR, model=MODEL))
 
 
 @pytest.mark.skipif(
@@ -117,7 +117,7 @@ def test_async_ask_matches_sync(backend: ONNXBackend) -> None:
     request = SystemOneInput.model_validate(
         {"state": "hi", "model": MODEL, "questions": {"a": QUESTIONS["outage"]}}
     )
-    async_backend = AsyncONNXBackend(backend.settings)
+    async_backend = AsyncONNXBackend(backend.config)
 
     assert (
         asyncio.run(async_backend.ask(request)).model_dump()
@@ -126,7 +126,7 @@ def test_async_ask_matches_sync(backend: ONNXBackend) -> None:
 
 
 def test_agent_selects_the_onnx_backend_from_settings() -> None:
-    with SystemOne(backend="onnx", onnx_dir=ONNX_DIR, model=MODEL) as agent:
+    with SystemOne(ONNXConfig(onnx_dir=ONNX_DIR, model=MODEL)) as agent:
         response = agent.ask("The site is down.", {"a": QUESTIONS["outage"]})
 
     assert isinstance(agent.backend, ONNXBackend)
@@ -139,8 +139,8 @@ def test_a_model_is_loaded_once_and_then_served_from_the_cache() -> None:
 
 def test_missing_graph_names_the_model_file_and_the_variable(tmp_path: Path) -> None:
     with pytest.raises(SystemOneError, match=r"other\.onnx"):
-        ONNXBackend(Settings(backend="onnx", onnx_dir=tmp_path, model="other"))
+        ONNXBackend(ONNXConfig(onnx_dir=tmp_path, model="other"))
 
-    # No SYSTEM_ONE_MODEL: the onnx backend fills in the published graph's name.
+    # No SYSTEM_ONE_MODEL: the config fills in the published graph's name.
     with pytest.raises(SystemOneError, match=r"laya\.onnx.*SYSTEM_ONE_ONNX_DIR"):
-        ONNXBackend(Settings(backend="onnx", onnx_dir=tmp_path, model=None))
+        ONNXBackend(ONNXConfig(onnx_dir=tmp_path))

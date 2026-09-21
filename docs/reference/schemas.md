@@ -28,8 +28,6 @@
 
 ::: system_one.schemas.Usage
 
-::: system_one.schemas.ModelInfo
-
 ## Helpers
 
 ::: system_one.schemas.distribution

@@ -223,14 +223,6 @@ class Usage(BaseOutput):
     cost: float | None = None
 
 
-class ModelInfo(BaseOutput):
-    """A model available to the account."""
-
-    name: str
-    description: str
-    release_date: str
-
-
 class SystemOneInput(BaseSchema):
     """The single normalized input shared by every backend."""
 

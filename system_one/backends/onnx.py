@@ -12,7 +12,7 @@ import onnxruntime
 import orjson
 from tokenizers import Tokenizer as HFTokenizer
 
-from system_one.catalog import DEFAULT_NAME, sha256_file
+from system_one.catalog import sha256_file
 from system_one.errors import SystemOneError
 from system_one.schemas import (
     ROUNDING,
@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from system_one.schemas import SystemOneInput
-    from system_one.settings import Settings
+    from system_one.settings import ONNXConfig
 
 Array: TypeAlias = np.ndarray[Any, np.dtype[Any]]
 
@@ -381,13 +381,13 @@ def postprocess(
 class ONNXBackend:
     """Runs the exported graph in-process. No torch, no transformers, no network."""
 
-    def __init__(self, settings: Settings) -> None:
-        self.settings = settings
-        self.model = settings.model or DEFAULT_NAME
-        load_model(settings.onnx_dir, self.model)
+    def __init__(self, config: ONNXConfig) -> None:
+        self.config = config
+        self.model = config.model
+        load_model(config.onnx_dir, self.model)
 
     def ask(self, request: SystemOneInput) -> SystemOneOutput:
-        model = load_model(self.settings.onnx_dir, request.model)
+        model = load_model(self.config.onnx_dir, request.model)
         items = build_items(model.tokenizer, model.config, request, model.max_options)
         logits = model.session.run(None, collate(items, model.pad_id))[0]
         return postprocess(logits, items, request, model.config)
@@ -399,8 +399,8 @@ class ONNXBackend:
 class AsyncONNXBackend:
     """The sync backend on a worker thread — ONNX Runtime releases the GIL anyway."""
 
-    def __init__(self, settings: Settings) -> None:
-        self.backend = ONNXBackend(settings)
+    def __init__(self, config: ONNXConfig) -> None:
+        self.backend = ONNXBackend(config)
         self.model = self.backend.model
 
     async def ask(self, request: SystemOneInput) -> SystemOneOutput:
