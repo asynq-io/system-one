@@ -1,5 +1,6 @@
 import asyncio
 import importlib.util
+from typing import Any
 
 import pytest
 from pydantic import SecretStr, ValidationError
@@ -153,3 +154,37 @@ def test_backend_choice_is_explicit(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SYSTEM_ONE_BACKEND", "onnx")
 
     assert Settings().backend == "onnx"
+
+
+def test_stub_backend_answers_every_question_type_at_random() -> None:
+    from system_one import StubConfig
+
+    questions: dict[str, dict[str, Any]] = {
+        "urgent": {"type": "noul", "instructions": "?"},
+        "tone": {"type": "choice", "instructions": "?", "criteria": ["calm", "angry"]},
+        "heat": {
+            "type": "score",
+            "instructions": "?",
+            "criteria": ["low", "mid", "high"],
+        },
+    }
+    first = SystemOne(StubConfig(seed=1)).ask("hi", questions)
+    again = SystemOne(StubConfig(seed=1)).ask("hi", questions)
+
+    assert first == again
+    assert first.model == "stub"
+    assert 0.0 <= first.nouls["urgent"].noul <= 1.0
+    assert first.choices["tone"].choice in {"calm", "angry"}
+    assert 0.0 <= first.scores["heat"].score <= 2.0
+    assert first.scores["heat"].confidence is not None
+
+
+def test_stub_backend_is_selectable_from_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from system_one.backends.stub import AsyncStubBackend, StubBackend
+
+    monkeypatch.setenv("SYSTEM_ONE_BACKEND", "stub")
+
+    assert isinstance(SystemOne().backend, StubBackend)
+    assert isinstance(AsyncSystemOne().backend, AsyncStubBackend)
