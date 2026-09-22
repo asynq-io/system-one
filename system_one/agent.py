@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from system_one.backends import create_async_backend, create_backend
 from system_one.schemas import SystemOneInput
-from system_one.settings import ONNXConfig, Settings
+from system_one.settings import ONNXConfig, Settings, StubConfig
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -16,11 +16,20 @@ if TYPE_CHECKING:
     from system_one.settings import BackendConfig
 
 
+def _backend_name(config: BackendConfig) -> str:
+    if isinstance(config, ONNXConfig):
+        return "onnx"
+    if isinstance(config, StubConfig):
+        return "stub"
+    return "http"
+
+
 class BaseSystemOne:
     """Settings resolution and input building, shared by the sync and async agents.
 
     `config` is the backend's own configuration — `TypesafeConfig()`,
-    `OpenRouterConfig()`, `HTTPConfig(base_url=..., model=...)` or `ONNXConfig()` —
+    `OpenRouterConfig()`, `HTTPConfig(base_url=..., model=...)`, `ONNXConfig()` or
+    `StubConfig()` —
     and picks the backend to build; omitted, `SYSTEM_ONE_BACKEND` decides and the
     config is read from the environment. `using` hands over an already-built backend
     instead, which is how tests and custom providers plug in.
@@ -30,7 +39,7 @@ class BaseSystemOne:
 
     def __init__(self, config: BackendConfig | None = None, **overrides: Any) -> None:
         if config is not None and "backend" not in overrides:
-            overrides["backend"] = "onnx" if isinstance(config, ONNXConfig) else "http"
+            overrides["backend"] = _backend_name(config)
         self.settings = Settings(**overrides)
         self.config = config
 

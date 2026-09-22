@@ -22,7 +22,7 @@ class Settings(BaseSettings):
 
     model_config = ENV
 
-    backend: Literal["http", "onnx"] = "http"
+    backend: Literal["http", "onnx", "stub"] = "http"
     model: str | None = None
 
 
@@ -65,4 +65,13 @@ class ONNXConfig(BaseSettings):
     model: str = DEFAULT_NAME
 
 
-BackendConfig: TypeAlias = HTTPConfig | ONNXConfig
+class StubConfig(BaseSettings):
+    """Random answers of the right shape; `seed` makes them reproducible."""
+
+    model_config = ENV
+
+    model: str = "stub"
+    seed: int | None = None
+
+
+BackendConfig: TypeAlias = HTTPConfig | ONNXConfig | StubConfig

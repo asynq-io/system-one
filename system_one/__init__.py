@@ -30,6 +30,7 @@ from system_one.settings import (
     ONNXConfig,
     OpenRouterConfig,
     Settings,
+    StubConfig,
     TypesafeConfig,
 )
 
@@ -55,6 +56,7 @@ __all__ = [
     "Score",
     "ScoreAnswer",
     "Settings",
+    "StubConfig",
     "SystemOne",
     "SystemOneError",
     "SystemOneInput",

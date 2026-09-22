@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING, Protocol, TypeVar
 
 from system_one.errors import SystemOneError
-from system_one.settings import BackendConfig, HTTPConfig, ONNXConfig
+from system_one.settings import BackendConfig, HTTPConfig, ONNXConfig, StubConfig
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -72,6 +72,10 @@ def _resolve(
 
 def create_backend(settings: Settings, config: BackendConfig | None = None) -> Backend:
     """The sync backend named by `settings.backend`."""
+    if settings.backend == "stub":
+        from system_one.backends.stub import StubBackend
+
+        return StubBackend(_resolve(settings, config, StubConfig))
     if settings.backend == "onnx":
         with _hint("onnx"):
             from system_one.backends.onnx import ONNXBackend
@@ -85,6 +89,10 @@ def create_async_backend(
     settings: Settings, config: BackendConfig | None = None
 ) -> AsyncBackend:
     """The async backend named by `settings.backend`."""
+    if settings.backend == "stub":
+        from system_one.backends.stub import AsyncStubBackend
+
+        return AsyncStubBackend(_resolve(settings, config, StubConfig))
     if settings.backend == "onnx":
         with _hint("onnx"):
             from system_one.backends.onnx import AsyncONNXBackend

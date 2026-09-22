@@ -8,6 +8,7 @@ it as `agent.backend`; which one you get is the config you pass, or
 | --- | --- | --- |
 | `http` (default) | `system-one[http]` | Calls a hosted provider over HTTP. |
 | `onnx` | `system-one[onnx]` | Runs the model in-process. No network, no API key. |
+| `stub` | none | Answers at random. For wiring tests and demos only. |
 
 Vendor imports live inside the backend factory, so the extras stay genuinely
 optional: installing the core package pulls neither `httpx2` nor `onnxruntime`.
@@ -77,6 +78,17 @@ Those artifacts are produced once from a
 
 The async ONNX backend runs the same synchronous session off the event loop, so
 `await agent.ask(...)` does not block it.
+
+## Stub
+
+```python
+SystemOne(StubConfig(seed=1))  # `seed` is optional; set it for reproducible output
+```
+
+or `SYSTEM_ONE_BACKEND=stub`. Every question gets a uniformly random answer of the
+right shape — a `noul` probability, a choice drawn from its labels with a
+distribution, an expected score with its legend — and zero usage. Nothing about
+the state is read, so never use it for decisions.
 
 ## Injecting your own
 
