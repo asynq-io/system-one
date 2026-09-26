@@ -38,6 +38,7 @@ nav:
       - "Agent": reference/agent.md
       - "CLI": reference/cli.md
       - "Schemas": reference/schemas.md
+      - "Utils": reference/utils.md
       - "Settings": reference/settings.md
       - "Backends": reference/backends.md
       - "Errors": reference/errors.md

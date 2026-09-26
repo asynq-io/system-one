@@ -21,13 +21,8 @@ from system_one.backends.onnx import (
     softmax,
     temp_bucket,
 )
-from system_one.schemas import (
-    Choice,
-    Noul,
-    SystemOneInput,
-    choice_confidence,
-    score_confidence,
-)
+from system_one.schemas import Choice, Noul, SystemOneInput
+from system_one.utils import choice_confidence, score_confidence
 
 CONFIG: dict[str, Any] = {
     "max_len": 512,

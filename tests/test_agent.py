@@ -1,6 +1,5 @@
 import asyncio
 import importlib.util
-from typing import Any
 
 import pytest
 from pydantic import SecretStr, ValidationError
@@ -12,9 +11,11 @@ from system_one import (
     SystemOne,
     TypesafeConfig,
 )
-from system_one.schemas import SystemOneInput, SystemOneOutput
+from system_one.schemas import QuestionInput, SystemOneInput, SystemOneOutput
 
-QUESTIONS = {"urgent": {"type": "noul", "instructions": "Does this need a human?"}}
+QUESTIONS: QuestionInput = {
+    "urgent": {"type": "noul", "instructions": "Does this need a human?"}
+}
 
 
 class FakeBackend:
@@ -74,20 +75,24 @@ def test_per_call_model_overrides_settings() -> None:
 
 
 def test_settings_come_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("SYSTEM_ONE_MODEL", "from-env")
     monkeypatch.setenv("SYSTEM_ONE_BACKEND", "onnx")
 
-    settings = SystemOne(using=FakeBackend()).settings
+    assert SystemOne(using=FakeBackend()).settings.backend == "onnx"
 
-    assert settings.model == "from-env"
-    assert settings.backend == "onnx"
+
+def test_the_config_reads_its_model_from_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SYSTEM_ONE_MODEL", "from-env")
+
+    assert SystemOne(backend="stub").backend.model == "from-env"
 
 
 def test_config_selects_the_provider_preset(monkeypatch: pytest.MonkeyPatch) -> None:
     from system_one.backends.http import HTTPBackend
 
     monkeypatch.setenv("SYSTEM_ONE_API_KEY", "secret")  # OpenRouterConfig reads it
-    backend = SystemOne(OpenRouterConfig()).backend  # type: ignore[call-arg]
+    backend = SystemOne(OpenRouterConfig()).backend
 
     assert isinstance(backend, HTTPBackend)
     assert backend.base_url == "https://openrouter.ai"
@@ -104,7 +109,16 @@ def test_the_model_override_beats_the_config_preset() -> None:
 def test_overrides_beat_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SYSTEM_ONE_MODEL", "from-env")
 
-    assert SystemOne(using=FakeBackend(), model="explicit").settings.model == "explicit"
+    assert SystemOne(backend="stub", model="explicit").backend.model == "explicit"
+
+
+def test_overrides_reach_fields_beyond_the_model() -> None:
+    from system_one.backends.stub import StubBackend
+
+    backend = SystemOne(backend="stub", seed=7).backend
+
+    assert isinstance(backend, StubBackend)
+    assert backend.config.seed == 7
 
 
 def test_backend_is_reachable_for_backend_specific_calls() -> None:
@@ -135,7 +149,7 @@ def test_async_context_manager_closes_the_backend() -> None:
 
 def test_hosted_backend_needs_an_api_key() -> None:
     with pytest.raises(ValidationError, match="api_key"):
-        SystemOne(TypesafeConfig())  # type: ignore[call-arg]
+        SystemOne(TypesafeConfig())
 
 
 @pytest.mark.skipif(
@@ -159,7 +173,7 @@ def test_backend_choice_is_explicit(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_stub_backend_answers_every_question_type_at_random() -> None:
     from system_one import StubConfig
 
-    questions: dict[str, dict[str, Any]] = {
+    questions: QuestionInput = {
         "urgent": {"type": "noul", "instructions": "?"},
         "tone": {"type": "choice", "instructions": "?", "criteria": ["calm", "angry"]},
         "heat": {

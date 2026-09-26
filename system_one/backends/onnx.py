@@ -15,7 +15,6 @@ from tokenizers import Tokenizer as HFTokenizer
 from system_one.catalog import sha256_file
 from system_one.errors import SystemOneError
 from system_one.schemas import (
-    ROUNDING,
     Answer,
     Choice,
     ChoiceAnswer,
@@ -28,6 +27,7 @@ from system_one.schemas import (
     SystemOneOutput,
     Usage,
 )
+from system_one.utils import ROUNDING
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -383,7 +383,7 @@ class ONNXBackend:
 
     def __init__(self, config: ONNXConfig) -> None:
         self.config = config
-        self.model = config.model
+        self.model = config.resolved_model
         load_model(config.onnx_dir, self.model)
 
     def ask(self, request: SystemOneInput) -> SystemOneOutput:

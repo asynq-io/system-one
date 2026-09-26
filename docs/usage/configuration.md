@@ -16,7 +16,7 @@ alongside everything else in your `.env`.
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `SYSTEM_ONE_BACKEND` | `http` | `http` or `onnx` |
-| `SYSTEM_ONE_MODEL` | — | overrides whatever the config would use |
+| `SYSTEM_ONE_MODEL` | the config's `default_model` | required by plain `http`; an explicit `model=` wins |
 | `SYSTEM_ONE_BASE_URL` | — | required by plain `http`; the presets set their own |
 | `SYSTEM_ONE_PATH` | `/v1/systemone` | |
 | `SYSTEM_ONE_API_KEY` | — | required by `TypesafeConfig` / `OpenRouterConfig` |
@@ -52,7 +52,8 @@ SystemOne(ONNXConfig())  # local graph, no network, no key
 ```
 
 `SYSTEM_ONE_BACKEND=onnx` picks the local backend without naming a config, and
-`SystemOne(model="x")` overrides whichever model the config would have used.
+keyword arguments patch the config: `SystemOne(model="x")` or
+`SystemOne(ONNXConfig(), onnx_dir="elsewhere")`.
 `SystemOne(using=...)` skips config entirely and takes a backend *instance* —
 see [Backends](backends.md).
 

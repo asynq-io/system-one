@@ -89,10 +89,10 @@ while one split between neighbours scores `0.5`.
 
 ## Serialization
 
-Every schema is a frozen pydantic model, so the usual methods apply. Unset
-optional fields stay off the wire:
+Every schema is a frozen pydantic model, so the usual methods apply. Pass
+`exclude_none=True` to keep unset optional fields off the wire:
 
 ```python
-response.model_dump()
-response.model_dump_json()
+response.model_dump(exclude_none=True)
+response.model_dump_json(exclude_none=True)
 ```

@@ -17,19 +17,17 @@ from system_one.schemas import (
     SystemOneOutput,
     Usage,
 )
+from system_one.utils import ROUNDING
 
 if TYPE_CHECKING:
     from system_one.schemas import SystemOneInput
     from system_one.settings import StubConfig
 
-ROUNDING = 4
-
 
 class _BaseStubBackend:
-    model: str = "stub"
-
     def __init__(self, config: StubConfig) -> None:
         self.config = config
+        self.model = config.resolved_model
         self._random = random.Random(config.seed)  # noqa: S311  # nosec B311
 
     def _distribution(self, size: int) -> list[float]:

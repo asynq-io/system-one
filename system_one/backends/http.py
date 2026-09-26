@@ -85,7 +85,7 @@ class BaseHTTPBackend:
 
     def __init__(self, config: HTTPConfig, *, transport: Any = None) -> None:
         self.config = config
-        self.model = config.model
+        self.model = config.resolved_model
         self.base_url = config.base_url.rstrip("/")
         self.path = config.path
         self._transport = transport
@@ -105,7 +105,9 @@ class BaseHTTPBackend:
         return httpx2.Request(method, url, headers=self._headers, content=body)
 
     def _ask_request(self, request: SystemOneInput) -> httpx2.Request:
-        return self._build("POST", self.path, request.model_dump_json())
+        return self._build(
+            "POST", self.path, request.model_dump_json(exclude_none=True)
+        )
 
     def _delay_or_reraise(self, error: SystemOneError, attempt: int) -> float:
         if attempt >= self.config.max_retries or not is_retryable(error):
