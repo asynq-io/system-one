@@ -59,30 +59,10 @@ see [Backends](backends.md).
 
 ## Lifecycle
 
-Agents hold a client (an HTTP connection pool, or a loaded ONNX session), so
-close them when you are done. The context manager is the easy way:
-
-=== "Sync"
-
-    ```python
-    with SystemOne() as agent:
-        ...
-    # or, explicitly
-    agent = SystemOne()
-    try:
-        ...
-    finally:
-        agent.close()
-    ```
-
-=== "Async"
-
-    ```python
-    async with AsyncSystemOne() as agent:
-        ...
-    # or, explicitly
-    await agent.close()
-    ```
+Agents and backends have no `close`. An HTTP backend builds its own `httpx2`
+client unless you pass one with `client=`; a client you pass stays yours to
+close — see
+[Bringing your own client](backends.md#bringing-your-own-client).
 
 A long-lived agent is the intended shape — build one per process, not one per
 request.

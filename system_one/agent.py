@@ -9,8 +9,6 @@ from system_one.schemas import SystemOneInput
 from system_one.settings import ONNXConfig, Settings, StubConfig
 
 if TYPE_CHECKING:
-    from typing_extensions import Self
-
     from system_one.backends import AsyncBackend, Backend
     from system_one.schemas import QuestionInput, State, SystemOneOutput
     from system_one.settings import BackendConfig
@@ -79,15 +77,6 @@ class SystemOne(BaseSystemOne):
     ) -> SystemOneOutput:
         return self.backend.ask(self._input(state, questions, model))
 
-    def close(self) -> None:
-        self.backend.close()
-
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(self, *exc: object) -> None:
-        self.close()
-
 
 class AsyncSystemOne(BaseSystemOne):
     """The async counterpart of `SystemOne`: the same `ask`, awaited."""
@@ -111,12 +100,3 @@ class AsyncSystemOne(BaseSystemOne):
         self, state: State, questions: QuestionInput, *, model: str | None = None
     ) -> SystemOneOutput:
         return await self.backend.ask(self._input(state, questions, model))
-
-    async def close(self) -> None:
-        await self.backend.close()
-
-    async def __aenter__(self) -> Self:
-        return self
-
-    async def __aexit__(self, *exc: object) -> None:
-        await self.close()

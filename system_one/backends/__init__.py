@@ -31,17 +31,13 @@ class Backend(Protocol):
 
     def ask(self, request: SystemOneInput) -> SystemOneOutput: ...
 
-    def close(self) -> None: ...
-
 
 class AsyncBackend(Protocol):
-    """The same two methods as `Backend`, awaited."""
+    """The same `ask` as `Backend`, awaited."""
 
     model: str
 
     async def ask(self, request: SystemOneInput) -> SystemOneOutput: ...
-
-    async def close(self) -> None: ...
 
 
 @contextmanager

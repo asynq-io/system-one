@@ -40,7 +40,6 @@ class FakeAsyncBackend:
 
     def __init__(self) -> None:
         self.requests: list[SystemOneInput] = []
-        self.closed = False
 
     async def ask(self, request: SystemOneInput) -> SystemOneOutput:
         self.requests.append(request)
@@ -53,9 +52,6 @@ class FakeAsyncBackend:
                 },
             }
         )
-
-    async def close(self) -> None:
-        self.closed = True
 
 
 def write_config(tmp_path: Path) -> Path:

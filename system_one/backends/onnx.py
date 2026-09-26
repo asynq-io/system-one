@@ -392,9 +392,6 @@ class ONNXBackend:
         logits = model.session.run(None, collate(items, model.pad_id))[0]
         return postprocess(logits, items, request, model.config)
 
-    def close(self) -> None:
-        """Sessions are shared through `load_model`, so there is nothing to release."""
-
 
 class AsyncONNXBackend:
     """The sync backend on a worker thread — ONNX Runtime releases the GIL anyway."""
@@ -405,6 +402,3 @@ class AsyncONNXBackend:
 
     async def ask(self, request: SystemOneInput) -> SystemOneOutput:
         return await asyncio.to_thread(self.backend.ask, request)
-
-    async def close(self) -> None:
-        """Sessions are shared through `load_model`, so there is nothing to release."""

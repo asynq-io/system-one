@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
-from collections.abc import AsyncIterator, Mapping, Sequence
-from contextlib import asynccontextmanager
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import yaml
@@ -59,24 +58,14 @@ def create_server(
     agent: AsyncSystemOne | None = None,
 ) -> FastMCP:
     """Build the MCP server; `agent` is the injection seam used by the tests."""
-    owned = agent is None
     agent = agent if agent is not None else AsyncSystemOne()
-
-    @asynccontextmanager
-    async def lifespan(_: FastMCP) -> AsyncIterator[None]:
-        try:
-            yield
-        finally:
-            if owned:
-                await agent.close()
-
     tools = [
         _group_tool(agent, name, spec)
         for name, spec in (load_config(config) if config else {}).items()
     ]
     if generic or config is None:
         tools.append(_generic_tool(agent))
-    return FastMCP("system-one", lifespan=lifespan, tools=tools)
+    return FastMCP("system-one", tools=tools)
 
 
 def _parser() -> argparse.ArgumentParser:

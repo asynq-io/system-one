@@ -28,23 +28,23 @@ lives behind an extra.
     ```python
     from system_one import SystemOne, TypesafeConfig
 
-    with SystemOne(TypesafeConfig()) as agent:  # reads $SYSTEM_ONE_API_KEY
-        response = agent.ask(
-            "Customer is furious about a double charge.",
-            {
-                "urgent": {"type": "noul", "instructions": "Does this need a human now?"},
-                "topic": {
-                    "type": "choice",
-                    "instructions": "Which queue?",
-                    "criteria": ["billing", "technical", "other"],
-                },
-                "severity": {
-                    "type": "score",
-                    "instructions": "How severe?",
-                    "criteria": ["minor", "normal", "major", "critical"],
-                },
+    agent = SystemOne(TypesafeConfig())  # reads $SYSTEM_ONE_API_KEY
+    response = agent.ask(
+        "Customer is furious about a double charge.",
+        {
+            "urgent": {"type": "noul", "instructions": "Does this need a human now?"},
+            "topic": {
+                "type": "choice",
+                "instructions": "Which queue?",
+                "criteria": ["billing", "technical", "other"],
             },
-        )
+            "severity": {
+                "type": "score",
+                "instructions": "How severe?",
+                "criteria": ["minor", "normal", "major", "critical"],
+            },
+        },
+    )
 
     print(response.nouls["urgent"].noul, response.nouls["urgent"].confidence)
     print(response.choices["topic"].choice, response.choices["topic"].probabilities)
@@ -56,16 +56,16 @@ lives behind an extra.
     ```python
     from system_one import AsyncSystemOne, TypesafeConfig
 
-    async with AsyncSystemOne(TypesafeConfig()) as agent:
-        response = await agent.ask(
-            "Customer is furious about a double charge.",
-            {"urgent": {"type": "noul", "instructions": "Does this need a human now?"}},
-        )
+    agent = AsyncSystemOne(TypesafeConfig())
+    response = await agent.ask(
+        "Customer is furious about a double charge.",
+        {"urgent": {"type": "noul", "instructions": "Does this need a human now?"}},
+    )
     ```
 
 [`AsyncSystemOne`][system_one.agent.AsyncSystemOne] has the same shape and the
 same method names as [`SystemOne`][system_one.agent.SystemOne], awaited:
-`await agent.ask(...)`, `await agent.close()`, `async with`.
+`await agent.ask(...)`.
 
 ## Where to go next
 

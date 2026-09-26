@@ -125,13 +125,13 @@ def main() -> None:
 
     agent = Agent(device="cpu")
     worst = 0.0
-    with SystemOne(backend="onnx", onnx_dir=args.onnx_dir, model=args.model) as sdk:
-        for name, (state, questions) in CASES.items():
-            expected = comparable(agent.system_one(state, questions)["answers"])
-            actual = sdk.ask(state, questions).model_dump(mode="json")["answers"]
-            delta = max_numeric_delta(expected, actual)
-            worst = max(worst, delta)
-            print(f"{name:<28} max |delta| = {delta:.4f}")
+    sdk = SystemOne(backend="onnx", onnx_dir=args.onnx_dir, model=args.model)
+    for name, (state, questions) in CASES.items():
+        expected = comparable(agent.system_one(state, questions)["answers"])
+        actual = sdk.ask(state, questions).model_dump(mode="json")["answers"]
+        delta = max_numeric_delta(expected, actual)
+        worst = max(worst, delta)
+        print(f"{name:<28} max |delta| = {delta:.4f}")
 
     assert worst < 5e-4, (
         f"ONNX answers diverge from the reference implementation by {worst}"

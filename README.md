@@ -29,23 +29,23 @@ pip install "system-one[onnx]"   # local, in-process
 ```python
 from system_one import SystemOne, TypesafeConfig
 
-with SystemOne(TypesafeConfig()) as agent:  # reads $SYSTEM_ONE_API_KEY
-    response = agent.ask(
-        "Customer is furious about a double charge.",
-        {
-            "urgent": {"type": "noul", "instructions": "Does this need a human now?"},
-            "topic": {
-                "type": "choice",
-                "instructions": "Which queue?",
-                "criteria": ["billing", "technical", "other"],
-            },
-            "severity": {
-                "type": "score",
-                "instructions": "How severe?",
-                "criteria": ["minor", "normal", "major", "critical"],
-            },
+agent = SystemOne(TypesafeConfig())  # reads $SYSTEM_ONE_API_KEY
+response = agent.ask(
+    "Customer is furious about a double charge.",
+    {
+        "urgent": {"type": "noul", "instructions": "Does this need a human now?"},
+        "topic": {
+            "type": "choice",
+            "instructions": "Which queue?",
+            "criteria": ["billing", "technical", "other"],
         },
-    )
+        "severity": {
+            "type": "score",
+            "instructions": "How severe?",
+            "criteria": ["minor", "normal", "major", "critical"],
+        },
+    },
+)
 
 print(response.nouls["urgent"].noul, response.nouls["urgent"].confidence)
 print(response.choices["topic"].choice, response.choices["topic"].probabilities)
@@ -53,7 +53,7 @@ print(response.scores["severity"].score)
 ```
 
 `AsyncSystemOne` has the same shape and the same method names, awaited:
-`await agent.ask(...)`, `await agent.close()`, `async with`.
+`await agent.ask(...)`.
 
 ## Configuration
 
@@ -119,11 +119,11 @@ SYSTEM_ONE_MODEL=laya      # the file base name in that directory
 ```
 
 ```python
-with SystemOne(ONNXConfig(model="laya")) as agent:
-    response = agent.ask(
-        "The site is down.",
-        {"outage": {"type": "noul", "instructions": "Is there an outage?"}},
-    )
+agent = SystemOne(ONNXConfig(model="laya"))
+response = agent.ask(
+    "The site is down.",
+    {"outage": {"type": "noul", "instructions": "Is there an outage?"}},
+)
 ```
 
 Full walkthrough — fetch vs export, variants, several models in one directory,
