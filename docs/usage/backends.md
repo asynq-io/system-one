@@ -111,5 +111,5 @@ class FakeBackend:
 agent = SystemOne(using=FakeBackend())
 ```
 
-Settings are still resolved when you inject a backend, so `SYSTEM_ONE_MODEL`
-still supplies the default model for `ask`.
+An injected backend owns its model: `ask` falls back to `backend.model`, not
+`SYSTEM_ONE_MODEL`.

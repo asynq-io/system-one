@@ -30,10 +30,4 @@
 
 ## Helpers
 
-::: system_one.schemas.distribution
-
-::: system_one.schemas.choice_confidence
-
-::: system_one.schemas.score_confidence
-
 ::: system_one.schemas.BaseSchema

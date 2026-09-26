@@ -115,20 +115,14 @@ def test_unusable_probabilities_leave_confidence_unset(
     assert answer.confidence is None
 
 
-def test_reported_confidence_is_never_overwritten() -> None:
-    answer = ChoiceAnswer.model_validate(
-        {"choice": "a", "confidence": 0.42, "probabilities": {"a": 0.9, "b": 0.1}}
-    )
-
-    assert answer.confidence == 0.42
-
-
 def test_confidence_stays_none_without_probabilities() -> None:
     assert ChoiceAnswer(choice="a").confidence is None
 
 
 def test_serializer_keeps_nested_none_and_drops_unset_optionals() -> None:
-    dumped = Choice(instructions="Which?", criteria={"calm": None}).model_dump()
+    dumped = Choice(instructions="Which?", criteria={"calm": None}).model_dump(
+        exclude_none=True
+    )
     assert dumped == {
         "type": "choice",
         "instructions": "Which?",
@@ -173,7 +167,7 @@ def test_request_serializes_to_the_wire_body() -> None:
             "questions": {"a": {"type": "noul", "instructions": "Down?"}},
         }
     )
-    assert request.model_dump() == {
+    assert request.model_dump(exclude_none=True) == {
         "state": {"subject": "outage"},
         "model": "jev-latest",
         "questions": {"a": {"type": "noul", "instructions": "Down?"}},

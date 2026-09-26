@@ -13,6 +13,7 @@ from system_one import (
     AuthenticationError,
     HTTPConfig,
     OpenRouterConfig,
+    SystemOneError,
     TypesafeConfig,
 )
 from system_one.backends.http import AsyncHTTPBackend, HTTPBackend, retry_after
@@ -124,12 +125,14 @@ def test_openrouter_shaped_answer_gets_confidence_filled() -> None:
 
 def test_missing_api_key_is_a_validation_error() -> None:
     with pytest.raises(ValidationError, match="api_key"):
-        TypesafeConfig()  # type: ignore[call-arg]
+        TypesafeConfig()
 
 
 def test_custom_http_needs_a_base_url_and_model() -> None:
     with pytest.raises(ValidationError, match="base_url"):
         HTTPConfig()  # type: ignore[call-arg]
+    with pytest.raises(SystemOneError, match="needs a model"):
+        HTTPBackend(HTTPConfig(base_url="https://my-host"))
 
 
 def test_custom_http_sends_no_authorization_header_without_a_key() -> None:
@@ -145,7 +148,9 @@ def test_custom_http_sends_no_authorization_header_without_a_key() -> None:
 def test_unset_model_falls_back_to_the_provider_preset() -> None:
     assert OpenRouterConfig(api_key=SecretStr("k")).base_url == "https://openrouter.ai"
     assert OpenRouterConfig(api_key=SecretStr("k")).path == "/api/alpha/decisions"
-    assert OpenRouterConfig(api_key=SecretStr("k")).model == "typesafe/jev-latest"
+    assert (
+        OpenRouterConfig(api_key=SecretStr("k")).resolved_model == "typesafe/jev-latest"
+    )
     assert backend(transport=None).model == "jev-latest"
     assert backend(transport=None, model="other").model == "other"
 

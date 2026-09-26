@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from system_one.backends import create_async_backend, create_backend
 from system_one.schemas import SystemOneInput
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from system_one.settings import BackendConfig
 
 
-def _backend_name(config: BackendConfig) -> str:
+def _backend_name(config: BackendConfig) -> Literal["http", "onnx", "stub"]:
     if isinstance(config, ONNXConfig):
         return "onnx"
     if isinstance(config, StubConfig):
@@ -38,10 +38,12 @@ class BaseSystemOne:
     backend: Any  # narrowed to `Backend` / `AsyncBackend` by the two subclasses
 
     def __init__(self, config: BackendConfig | None = None, **overrides: Any) -> None:
-        if config is not None and "backend" not in overrides:
-            overrides["backend"] = _backend_name(config)
-        self.settings = Settings(**overrides)
+        backend = overrides.pop("backend", None)
+        if backend is None and config is not None:
+            backend = _backend_name(config)
+        self.settings = Settings() if backend is None else Settings(backend=backend)
         self.config = config
+        self.overrides = overrides
 
     def _input(
         self, state: State, questions: QuestionInput, model: str | None
@@ -49,7 +51,7 @@ class BaseSystemOne:
         return SystemOneInput.model_validate(
             {
                 "state": state,
-                "model": model or self.settings.model or self.backend.model,
+                "model": model or self.backend.model,
                 "questions": questions,
             }
         )
@@ -67,7 +69,9 @@ class SystemOne(BaseSystemOne):
     ) -> None:
         super().__init__(config, **overrides)
         self.backend: Backend = (
-            using if using is not None else create_backend(self.settings, config)
+            using
+            if using is not None
+            else create_backend(self.settings, config, **self.overrides)
         )
 
     def ask(
@@ -96,8 +100,11 @@ class AsyncSystemOne(BaseSystemOne):
         **overrides: Any,
     ) -> None:
         super().__init__(config, **overrides)
+
         self.backend: AsyncBackend = (
-            using if using is not None else create_async_backend(self.settings, config)
+            using
+            if using is not None
+            else create_async_backend(self.settings, config, **self.overrides)
         )
 
     async def ask(

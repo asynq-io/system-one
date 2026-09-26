@@ -63,7 +63,7 @@ and any of them can be set in code instead: `SystemOne(HTTPConfig(..., timeout=3
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `SYSTEM_ONE_BACKEND` | `http` | `http` or `onnx` |
-| `SYSTEM_ONE_MODEL` | — | overrides whatever the config would use |
+| `SYSTEM_ONE_MODEL` | the config's `default_model` | required by plain `http`; an explicit `model=` wins |
 | `SYSTEM_ONE_BASE_URL` | — | required by plain `http`; the presets set their own |
 | `SYSTEM_ONE_PATH` | `/v1/systemone` | |
 | `SYSTEM_ONE_API_KEY` | — | required by `TypesafeConfig` / `OpenRouterConfig` |

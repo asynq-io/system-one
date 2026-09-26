@@ -2,92 +2,30 @@
 
 from __future__ import annotations
 
-import math
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from functools import cached_property
 from typing import Annotated, Any, Literal, TypeAlias, TypeVar
 
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    SerializerFunctionWrapHandler,
-    field_validator,
-    model_serializer,
-    model_validator,
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from typing_extensions import NotRequired, Self, TypedDict
+
+from .utils import (
+    choice_confidence,
+    confidence_over,
+    round_confidence,
+    score_confidence,
 )
 
 JSONValue: TypeAlias = str | Mapping[str, Any] | Sequence[Any]
 State: TypeAlias = JSONValue
 
 
-ROUNDING = 4
-PROBABILITY_TOLERANCE = 0.01
-EMPTY_DISTRIBUTION = "probabilities must not be empty"
-
-
-def distribution(probabilities: Iterable[float]) -> list[float]:
-    """Read a probability vector, rejecting anything that is not one.
-
-    Confidence derived from logits, top-k remnants or any other unnormalized vector
-    is meaningless, so callers get a `ValueError` instead of a plausible number.
-    """
-    values = [float(probability) for probability in probabilities]
-    if not values:
-        raise ValueError(EMPTY_DISTRIBUTION)
-    if any(not 0.0 <= value <= 1.0 for value in values):
-        message = f"probabilities must lie in [0, 1], got {values}"
-        raise ValueError(message)
-    total = math.fsum(values)
-    if abs(total - 1.0) > PROBABILITY_TOLERANCE:
-        message = f"probabilities must sum to 1, got {total}"
-        raise ValueError(message)
-    return values
-
-
-def choice_confidence(probabilities: Iterable[float]) -> float:
-    """Confidence in the selected choice: the probability of the reported label."""
-    return max(distribution(probabilities))
-
-
-def score_confidence(probabilities: Iterable[float]) -> float:
-    """Confidence in the expected score: `1 - 2 * sd / (k - 1)`.
-
-    The score is an expectation over ordered levels, so its reliability is how
-    tightly the mass sits around it. Entropy cannot see order and would rate a
-    distribution split between the end levels — whose expectation lands in a
-    valley no level claims — the same as one split between neighbours.
-    """
-    values = distribution(probabilities)
-    if len(values) == 1:
-        return 1.0
-    expected = math.fsum(level * value for level, value in enumerate(values))
-    variance = math.fsum(
-        value * (level - expected) ** 2 for level, value in enumerate(values)
-    )
-    return max(0.0, 1.0 - 2.0 * math.sqrt(variance) / (len(values) - 1))
-
-
 class BaseSchema(BaseModel):
-    """Frozen, strict-input model whose unset optional fields stay off the wire.
-
-    The wrap serializer drops only top-level ``None`` field values, so a user-supplied
-    ``criteria={"calm": None}`` survives while an unset ``instructions`` does not;
-    ``exclude_none`` would drop both and ``exclude_unset`` would drop the ``type``
-    discriminator.
-    """
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    @model_serializer(mode="wrap")
-    def _omit_none(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
-        return {key: value for key, value in handler(self).items() if value is not None}
-
-
-class BaseOutput(BaseSchema):
-    """Response-side model that tolerates fields a newer server adds."""
-
-    model_config = ConfigDict(frozen=True, extra="ignore")
+    model_config = ConfigDict(
+        use_enum_values=True,
+        populate_by_name=True,
+        from_attributes=True,
+    )
 
 
 class NoulCriteria(BaseSchema):
@@ -128,11 +66,43 @@ class Score(BaseSchema):
     criteria: Sequence[JSONValue] = Field(min_length=1)
 
 
+class NoulCriteriaDict(TypedDict, total=False):
+    """Dict form of `NoulCriteria`."""
+
+    true: JSONValue | None
+    false: JSONValue | None
+
+
+class NoulDict(TypedDict):
+    """Dict form of `Noul`."""
+
+    type: Literal["noul"]
+    instructions: str
+    criteria: NotRequired[NoulCriteria | NoulCriteriaDict | None]
+
+
+class ChoiceDict(TypedDict):
+    """Dict form of `Choice`; bare labels stand for options without descriptions."""
+
+    type: Literal["choice"]
+    instructions: str
+    criteria: Mapping[str, JSONValue | None] | Sequence[str]
+
+
+class ScoreDict(TypedDict):
+    """Dict form of `Score`."""
+
+    type: Literal["score"]
+    instructions: str
+    criteria: Sequence[JSONValue]
+
+
 Question: TypeAlias = Annotated[Noul | Choice | Score, Field(discriminator="type")]
-QuestionInput: TypeAlias = Mapping[str, Question | Mapping[str, Any]]
+QuestionDict: TypeAlias = NoulDict | ChoiceDict | ScoreDict
+QuestionInput: TypeAlias = Mapping[str, Question | QuestionDict]
 
 
-class ConfidentAnswer(BaseOutput):
+class ConfidentAnswer(BaseSchema):
     """An answer that reports how much to trust itself on one scale for every type.
 
     The hosted API always sends `confidence`; `_derive` fills it in for providers that
@@ -142,32 +112,17 @@ class ConfidentAnswer(BaseOutput):
 
     confidence: float | None = None
 
-    @classmethod
-    def _derive(cls, data: Mapping[str, Any]) -> float | None:
-        """Confidence implied by the raw payload, or `None` if it cannot be derived."""
+    def _derive(self) -> float | None:
+        """Confidence implied by the answer, or `None` if it cannot be derived."""
         raise NotImplementedError
 
-    @model_validator(mode="before")
-    @classmethod
-    def _fill_confidence(cls, data: Any) -> Any:
-        if not isinstance(data, Mapping) or data.get("confidence") is not None:
-            return data
-        confidence = cls._derive(data)
-        if confidence is None:
-            return data
-        return {**data, "confidence": round(confidence, ROUNDING)}
-
-
-def confidence_over(
-    probabilities: Any, measure: Callable[[Iterable[float]], float]
-) -> float | None:
-    """`measure` over a probability mapping, or `None` when it is not one we trust."""
-    if not isinstance(probabilities, Mapping):
-        return None
-    try:
-        return measure(probabilities.values())
-    except (ValueError, TypeError):
-        return None
+    @model_validator(mode="after")
+    def _fill_confidence(self) -> Self:
+        if self.confidence is None:
+            confidence = self._derive()
+            if confidence is not None:
+                self.confidence = round_confidence(confidence)
+        return self
 
 
 class NoulAnswer(ConfidentAnswer):
@@ -176,12 +131,8 @@ class NoulAnswer(ConfidentAnswer):
     type: Literal["noul"] = "noul"
     noul: float
 
-    @classmethod
-    def _derive(cls, data: Mapping[str, Any]) -> float | None:
-        noul = data.get("noul")
-        if not isinstance(noul, (int, float)) or isinstance(noul, bool):
-            return None
-        return max(float(noul), 1.0 - float(noul))
+    def _derive(self) -> float | None:
+        return max(self.noul, 1.0 - self.noul)
 
 
 class ChoiceAnswer(ConfidentAnswer):
@@ -191,9 +142,8 @@ class ChoiceAnswer(ConfidentAnswer):
     choice: str
     probabilities: dict[str, float] | None = None
 
-    @classmethod
-    def _derive(cls, data: Mapping[str, Any]) -> float | None:
-        return confidence_over(data.get("probabilities"), choice_confidence)
+    def _derive(self) -> float | None:
+        return confidence_over(self.probabilities, choice_confidence)
 
 
 class ScoreAnswer(ConfidentAnswer):
@@ -204,9 +154,8 @@ class ScoreAnswer(ConfidentAnswer):
     legend: dict[int, JSONValue] | None = None
     probabilities: dict[int, float] | None = None
 
-    @classmethod
-    def _derive(cls, data: Mapping[str, Any]) -> float | None:
-        return confidence_over(data.get("probabilities"), score_confidence)
+    def _derive(self) -> float | None:
+        return confidence_over(self.probabilities, score_confidence)
 
 
 Answer: TypeAlias = Annotated[
@@ -215,7 +164,7 @@ Answer: TypeAlias = Annotated[
 AnswerT = TypeVar("AnswerT", NoulAnswer, ChoiceAnswer, ScoreAnswer)
 
 
-class Usage(BaseOutput):
+class Usage(BaseSchema):
     """Token counts, and cost where the provider reports one."""
 
     input_tokens: int
@@ -231,7 +180,7 @@ class SystemOneInput(BaseSchema):
     questions: Mapping[str, Question] = Field(min_length=1)
 
 
-class SystemOneOutput(BaseOutput):
+class SystemOneOutput(BaseSchema):
     """Answers keyed by question name, with model and usage metadata."""
 
     model: str

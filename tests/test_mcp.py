@@ -98,7 +98,7 @@ def test_group_tool_sends_its_configured_questions(tmp_path: Path) -> None:
     assert request.state == "buy now!!!"
     assert set(request.questions) == {"is_spam", "severity"}
     assert request.questions["severity"].criteria == ["none", "mild", "severe"]
-    assert result.data["answers"]["is_spam"]["noul"] == 0.9
+    assert result.structured_content["answers"]["is_spam"]["noul"] == 0.9
 
 
 def test_generic_tool_only_without_config_or_with_flag(tmp_path: Path) -> None:
