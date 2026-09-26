@@ -52,12 +52,16 @@ def config(**overrides: Any) -> HTTPConfig:
     return TypesafeConfig(api_key=SecretStr("secret"), **overrides)
 
 
-def backend(*, transport: Any, **overrides: Any) -> HTTPBackend:
-    return HTTPBackend(config(**overrides), transport=transport)
+def backend(*, transport: httpx2.BaseTransport, **overrides: Any) -> HTTPBackend:
+    return HTTPBackend(config(**overrides), client=httpx2.Client(transport=transport))
 
 
-def async_backend(*, transport: Any, **overrides: Any) -> AsyncHTTPBackend:
-    return AsyncHTTPBackend(config(**overrides), transport=transport)
+def async_backend(
+    *, transport: httpx2.AsyncBaseTransport, **overrides: Any
+) -> AsyncHTTPBackend:
+    return AsyncHTTPBackend(
+        config(**overrides), client=httpx2.AsyncClient(transport=transport)
+    )
 
 
 def json_transport(
@@ -101,7 +105,7 @@ def test_both_vendor_configs_produce_the_same_response() -> None:
         sent: list[httpx2.Request] = []
         client = HTTPBackend(
             preset(api_key=SecretStr("secret")),
-            transport=json_transport(ANSWER_BODY, sent),
+            client=httpx2.Client(transport=json_transport(ANSWER_BODY, sent)),
         )
         answers.append(client.ask(make_request()).model_dump())
         urls.append(str(sent[0].url))
@@ -117,7 +121,7 @@ def test_both_vendor_configs_produce_the_same_response() -> None:
 def test_openrouter_shaped_answer_gets_confidence_filled() -> None:
     response = HTTPBackend(
         OpenRouterConfig(api_key=SecretStr("secret")),
-        transport=json_transport(ANSWER_BODY),
+        client=httpx2.Client(transport=json_transport(ANSWER_BODY)),
     ).ask(make_request())
 
     assert response.choices["topic"].confidence == 1.0
@@ -138,7 +142,9 @@ def test_custom_http_needs_a_base_url_and_model() -> None:
 def test_custom_http_sends_no_authorization_header_without_a_key() -> None:
     sent: list[httpx2.Request] = []
     custom = HTTPConfig(base_url="https://my-host", model="mine")
-    client = HTTPBackend(custom, transport=json_transport(ANSWER_BODY, sent))
+    client = HTTPBackend(
+        custom, client=httpx2.Client(transport=json_transport(ANSWER_BODY, sent))
+    )
     client.ask(make_request())
 
     assert str(sent[0].url) == "https://my-host/v1/systemone"
@@ -151,8 +157,8 @@ def test_unset_model_falls_back_to_the_provider_preset() -> None:
     assert (
         OpenRouterConfig(api_key=SecretStr("k")).resolved_model == "typesafe/jev-latest"
     )
-    assert backend(transport=None).model == "jev-latest"
-    assert backend(transport=None, model="other").model == "other"
+    assert HTTPBackend(config()).model == "jev-latest"
+    assert HTTPBackend(config(model="other")).model == "other"
 
 
 def test_unauthorized_is_not_retried() -> None:
@@ -230,7 +236,6 @@ def test_async_ask_matches_the_sync_result() -> None:
     async def use() -> dict[str, Any]:
         client = async_backend(transport=json_transport(ANSWER_BODY))
         response = await client.ask(make_request())
-        await client.close()
         return response.model_dump()
 
     assert asyncio.run(use()) == expected
@@ -294,9 +299,8 @@ def test_unparsable_retry_after_is_ignored() -> None:
     assert retry_after({"retry-after-ms": "bad", "retry-after": "2"}) == 2.0
 
 
-def test_close_releases_the_sync_client() -> None:
-    client = backend(transport=json_transport(ANSWER_BODY))
-    client.close()
+def test_a_given_client_is_used_and_left_open() -> None:
+    client = httpx2.Client(transport=json_transport(ANSWER_BODY))
+    HTTPBackend(config(), client=client).ask(make_request())
 
-    with pytest.raises(RuntimeError):
-        client.ask(make_request())
+    assert not client.is_closed

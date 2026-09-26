@@ -23,7 +23,6 @@ class FakeBackend:
 
     def __init__(self) -> None:
         self.requests: list[SystemOneInput] = []
-        self.closed = False
 
     def ask(self, request: SystemOneInput) -> SystemOneOutput:
         self.requests.append(request)
@@ -37,16 +36,10 @@ class FakeBackend:
             }
         )
 
-    def close(self) -> None:
-        self.closed = True
-
 
 class FakeAsyncBackend(FakeBackend):
     async def ask(self, request: SystemOneInput) -> SystemOneOutput:  # type: ignore[override]
         return super().ask(request)
-
-    async def close(self) -> None:  # type: ignore[override]
-        self.closed = True
 
 
 def test_ask_round_trips_through_the_backend() -> None:
@@ -125,26 +118,6 @@ def test_backend_is_reachable_for_backend_specific_calls() -> None:
     backend = FakeBackend()
 
     assert SystemOne(using=backend).backend is backend
-
-
-def test_context_manager_closes_the_backend() -> None:
-    backend = FakeBackend()
-    with SystemOne(using=backend) as agent:
-        agent.ask("hi", QUESTIONS)
-
-    assert backend.closed
-
-
-def test_async_context_manager_closes_the_backend() -> None:
-    backend = FakeAsyncBackend()
-
-    async def use() -> None:
-        async with AsyncSystemOne(using=backend) as agent:
-            await agent.ask("hi", QUESTIONS)
-
-    asyncio.run(use())
-
-    assert backend.closed
 
 
 def test_hosted_backend_needs_an_api_key() -> None:

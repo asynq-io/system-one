@@ -17,13 +17,12 @@ command that fixes it.
 
 ## The protocol
 
-Both backends satisfy the same two-method protocol —
+Every backend satisfies the same one-method protocol —
 [`Backend`][system_one.backends.Backend], or
 [`AsyncBackend`][system_one.backends.AsyncBackend] for the awaited version:
 
 ```python
 def ask(self, request: SystemOneInput) -> SystemOneOutput: ...
-def close(self) -> None: ...
 ```
 
 That is the whole contract. Anything implementing it can be handed to an agent.
@@ -56,6 +55,19 @@ Retries are built in: `408`, `429` and `5xx` are retried up to
 retried — see [Errors](errors.md).
 
 Backend-specific calls stay reachable through `agent.backend`.
+
+### Bringing your own client
+
+The HTTP backends take an optional `client=` — an `httpx2.Client`, or an
+`httpx2.AsyncClient` for `AsyncHTTPBackend`. Without one they build their own
+with `timeout=SYSTEM_ONE_TIMEOUT`. Pass one to share a connection pool or to
+control its lifetime; closing it is up to you:
+
+```python
+with httpx2.Client(timeout=30) as client:
+    agent = SystemOne(using=HTTPBackend(TypesafeConfig(), client=client))
+    agent.ask(...)
+```
 
 ### A local server that speaks the form
 
@@ -130,9 +142,6 @@ class FakeBackend:
             usage=Usage(input_tokens=0, output_tokens=0),
             answers={"urgent": NoulAnswer(noul=0.9)},
         )
-
-    def close(self):
-        pass
 
 
 agent = SystemOne(using=FakeBackend())

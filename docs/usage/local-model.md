@@ -182,18 +182,18 @@ SYSTEM_ONE_MODEL=laya      # the spec's `name`, or `laya` after a fetch
 ```python
 from system_one import ONNXConfig, SystemOne
 
-with SystemOne(ONNXConfig(model="laya")) as agent:
-    response = agent.ask(
-        "Our production deployment failed after the upgrade.",
-        {
-            "outage": {"type": "noul", "instructions": "Is there an outage?"},
-            "team": {
-                "type": "choice",
-                "instructions": "Which team?",
-                "criteria": ["billing", "support", "sales"],
-            },
+agent = SystemOne(ONNXConfig(model="laya"))
+response = agent.ask(
+    "Our production deployment failed after the upgrade.",
+    {
+        "outage": {"type": "noul", "instructions": "Is there an outage?"},
+        "team": {
+            "type": "choice",
+            "instructions": "Which team?",
+            "criteria": ["billing", "support", "sales"],
         },
-    )
+    },
+)
 
 print(response.nouls["outage"].noul)
 print(response.choices["team"].choice, response.choices["team"].probabilities)

@@ -76,15 +76,9 @@ class StubBackend(_BaseStubBackend):
     def ask(self, request: SystemOneInput) -> SystemOneOutput:
         return self._ask(request)
 
-    def close(self) -> None:
-        """Nothing to release."""
-
 
 class AsyncStubBackend(_BaseStubBackend):
     """`StubBackend` behind the async protocol; nothing here blocks."""
 
     async def ask(self, request: SystemOneInput) -> SystemOneOutput:
         return self._ask(request)
-
-    async def close(self) -> None:
-        """Nothing to release."""

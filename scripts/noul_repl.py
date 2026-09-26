@@ -31,27 +31,23 @@ def main() -> None:
     config = ONNXConfig(**({"onnx_dir": args.onnx_dir} if args.onnx_dir else {}))
     overrides = {"model": args.model} if args.model else {}
 
-    with SystemOne(config, **overrides) as agent:
-        state = args.state or read_state()
-        print("Ask yes/no questions. `/state` changes the state, Ctrl-D quits.")
-        try:
-            while True:
-                question = input("? ").strip()
-                if not question:
-                    continue
-                if question == "/state":
-                    state = read_state()
-                    continue
-                answer = agent.ask(
-                    state, {"q": {"type": "noul", "instructions": question}}
-                )
-                noul = answer.nouls["q"]
-                verdict = "yes" if noul.noul >= YES_THRESHOLD else "no"
-                print(
-                    f"{verdict}  (p={noul.noul:.2f}, confidence={noul.confidence:.2f})"
-                )
-        except EOFError:
-            print()
+    agent = SystemOne(config, **overrides)
+    state = args.state or read_state()
+    print("Ask yes/no questions. `/state` changes the state, Ctrl-D quits.")
+    try:
+        while True:
+            question = input("? ").strip()
+            if not question:
+                continue
+            if question == "/state":
+                state = read_state()
+                continue
+            answer = agent.ask(state, {"q": {"type": "noul", "instructions": question}})
+            noul = answer.nouls["q"]
+            verdict = "yes" if noul.noul >= YES_THRESHOLD else "no"
+            print(f"{verdict}  (p={noul.noul:.2f}, confidence={noul.confidence:.2f})")
+    except EOFError:
+        print()
 
 
 if __name__ == "__main__":

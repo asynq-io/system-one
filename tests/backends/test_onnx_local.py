@@ -126,8 +126,8 @@ def test_async_ask_matches_sync(backend: ONNXBackend) -> None:
 
 
 def test_agent_selects_the_onnx_backend_from_settings() -> None:
-    with SystemOne(ONNXConfig(onnx_dir=ONNX_DIR, model=MODEL)) as agent:
-        response = agent.ask("The site is down.", {"a": QUESTIONS["outage"]})
+    agent = SystemOne(ONNXConfig(onnx_dir=ONNX_DIR, model=MODEL))
+    response = agent.ask("The site is down.", {"a": QUESTIONS["outage"]})
 
     assert isinstance(agent.backend, ONNXBackend)
     assert 0.0 <= response.nouls["a"].noul <= 1.0

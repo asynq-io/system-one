@@ -6,7 +6,7 @@ import asyncio
 import logging
 import secrets
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import httpx2
 
@@ -83,12 +83,11 @@ def transport_error(request: httpx2.Request, exc: httpx2.HTTPError) -> SystemOne
 class BaseHTTPBackend:
     """Request building, error mapping and retry pacing, shared by both flavours."""
 
-    def __init__(self, config: HTTPConfig, *, transport: Any = None) -> None:
+    def __init__(self, config: HTTPConfig) -> None:
         self.config = config
         self.model = config.resolved_model
         self.base_url = config.base_url.rstrip("/")
         self.path = config.path
-        self._transport = transport
         self._headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
@@ -119,16 +118,17 @@ class BaseHTTPBackend:
 class HTTPBackend(BaseHTTPBackend):
     """Talks to any vendor implementing the System One contract over HTTP."""
 
-    def __init__(self, config: HTTPConfig, *, transport: Any = None) -> None:
-        super().__init__(config, transport=transport)
-        self._client = httpx2.Client(timeout=config.timeout, transport=transport)
+    def __init__(
+        self, config: HTTPConfig, *, client: httpx2.Client | None = None
+    ) -> None:
+        super().__init__(config)
+        if client is None:
+            client = httpx2.Client(timeout=config.timeout)
+        self._client = client
 
     def ask(self, request: SystemOneInput) -> SystemOneOutput:
         response = self._send(self._ask_request(request))
         return SystemOneOutput.model_validate_json(response.content)
-
-    def close(self) -> None:
-        self._client.close()
 
     def _send(self, request: httpx2.Request) -> httpx2.Response:
         attempt = 0
@@ -153,16 +153,17 @@ class HTTPBackend(BaseHTTPBackend):
 class AsyncHTTPBackend(BaseHTTPBackend):
     """The async counterpart of `HTTPBackend`, sharing its config and retry policy."""
 
-    def __init__(self, config: HTTPConfig, *, transport: Any = None) -> None:
-        super().__init__(config, transport=transport)
-        self._client = httpx2.AsyncClient(timeout=config.timeout, transport=transport)
+    def __init__(
+        self, config: HTTPConfig, *, client: httpx2.AsyncClient | None = None
+    ) -> None:
+        super().__init__(config)
+        if client is None:
+            client = httpx2.AsyncClient(timeout=config.timeout)
+        self._client = client
 
     async def ask(self, request: SystemOneInput) -> SystemOneOutput:
         response = await self._send(self._ask_request(request))
         return SystemOneOutput.model_validate_json(response.content)
-
-    async def close(self) -> None:
-        await self._client.aclose()
 
     async def _send(self, request: httpx2.Request) -> httpx2.Response:
         attempt = 0
