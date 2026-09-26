@@ -38,6 +38,13 @@ SystemOne(OpenRouterConfig())  # https://openrouter.ai/api/alpha/decisions
 SystemOne(HTTPConfig(base_url="https://my-host", model="mine"))
 ```
 
+The request goes to `base_url + path`. `path` defaults to `/v1/systemone`, and
+you can point it anywhere with `path=` or `SYSTEM_ONE_PATH`:
+
+```python
+SystemOne(HTTPConfig(base_url="https://my-host", path="/decide", model="mine"))
+```
+
 The presets require `SYSTEM_ONE_API_KEY` (or `api_key=`); a plain `HTTPConfig`
 sends no `Authorization` header without one. Every field also reads its
 `SYSTEM_ONE_*` variable, so `SystemOne()` alone needs `SYSTEM_ONE_BASE_URL` and
@@ -52,11 +59,11 @@ Backend-specific calls stay reachable through `agent.backend`.
 
 ### A local server that speaks the form
 
-`HTTPConfig` is not tied to a hosted vendor: any server that answers
-`POST /v1/systemone` in the same request and answer shape works, including one
-on the machine itself. [coreai-kit](https://github.com/john-rocky/coreai-kit)
-runs a catalog model behind that endpoint on a Mac (Apple's Core AI runtime,
-macOS 27):
+`HTTPConfig` is not tied to a hosted vendor: any server that answers a `POST`
+in the same request and answer shape works, including one on the machine
+itself. It can live on any route; set `path` to match. [coreai-kit](https://github.com/john-rocky/coreai-kit)
+runs a catalog model on a Mac (Apple's Core AI runtime, macOS 27) behind the
+default `/v1/systemone`, so it needs no `path`:
 
 ```shell
 cd Examples/Decide && swift run -c release decide-cli serve   # http://127.0.0.1:8090/v1/systemone
