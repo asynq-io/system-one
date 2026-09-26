@@ -128,6 +128,8 @@ with SystemOne(ONNXConfig(model="laya")) as agent:
 
 Full walkthrough — fetch vs export, variants, several models in one directory,
 verification, troubleshooting: [docs/usage/local-model.md](docs/usage/local-model.md).
+A local *server* that speaks the `/v1/systemone` form works through `HTTPConfig`
+too — see [Backends](docs/usage/backends.md#a-local-server-that-speaks-the-form).
 
 ## Errors
 

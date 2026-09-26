@@ -50,6 +50,26 @@ retried — see [Errors](errors.md).
 
 Backend-specific calls stay reachable through `agent.backend`.
 
+### A local server that speaks the form
+
+`HTTPConfig` is not tied to a hosted vendor: any server that answers
+`POST /v1/systemone` in the same request and answer shape works, including one
+on the machine itself. [coreai-kit](https://github.com/john-rocky/coreai-kit)
+runs a catalog model behind that endpoint on a Mac (Apple's Core AI runtime,
+macOS 27):
+
+```shell
+cd Examples/Decide && swift run -c release decide-cli serve   # http://127.0.0.1:8090/v1/systemone
+```
+
+```python
+SystemOne(HTTPConfig(base_url="http://127.0.0.1:8090", model="minicpm5-2b"))
+```
+
+No key, nothing leaves the machine. One difference from the hosted API to know
+about: a choice there lists at most 16 options, and a longer list comes back as
+a `422` with the reason.
+
 ## ONNX
 
 ```python
