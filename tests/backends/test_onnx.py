@@ -186,11 +186,11 @@ def test_postprocess_scores_the_expectation_of_a_uniform_distribution() -> None:
     score = response.scores["level"]
 
     assert score.score == 1.0
-    assert score.confidence == 0.1835
+    assert score.confidence == 0.0
     assert score.probabilities == {0: 0.3333, 1: 0.3333, 2: 0.3333}
     assert score.legend == {0: "low", 1: "medium", 2: "high"}
     assert response.nouls["down"].noul == 0.5
-    assert response.nouls["down"].confidence == 0.5
+    assert response.nouls["down"].confidence == 0.0
     assert response.usage.input_tokens == 5
     assert response.usage.output_tokens == 0
     assert response.model == "jev-latest"
@@ -282,11 +282,13 @@ def test_a_tokenizer_without_the_mask_token_is_rejected() -> None:
     ("probabilities", "expected"),
     [
         ([1.0], 1.0),
-        ([0.8, 0.2], 0.8),
-        ([0.5, 0.25, 0.25], 0.5),
+        ([0.8, 0.2], 0.6),
+        ([0.5, 0.25, 0.25], 0.25),
+        ([0.8, 0.1, 0.1], 0.7),
+        ([0.25, 0.25, 0.25, 0.25], 0.0),
     ],
 )
-def test_choice_confidence_is_the_probability_of_the_reported_label(
+def test_choice_confidence_rescales_the_top_probability_above_uniform(
     probabilities: list[float], expected: float
 ) -> None:
     assert choice_confidence(probabilities) == pytest.approx(expected)
@@ -297,11 +299,12 @@ def test_choice_confidence_is_the_probability_of_the_reported_label(
     [
         ([1.0], 1.0),
         ([0.0, 1.0, 0.0], 1.0),
-        ([0.5, 0.5, 0.0], 0.5),
+        ([0.5, 0.5, 0.0], 0.25),
         ([0.5, 0.0, 0.5], 0.0),
+        ([0.1, 0.1, 0.8], 0.55),
     ],
 )
-def test_score_confidence_tracks_dispersion_around_the_expectation(
+def test_score_confidence_tracks_distance_from_the_mode(
     probabilities: list[float], expected: float
 ) -> None:
     assert score_confidence(probabilities) == pytest.approx(expected)

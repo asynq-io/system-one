@@ -27,7 +27,7 @@ from system_one.schemas import (
     SystemOneOutput,
     Usage,
 )
-from system_one.utils import ROUNDING
+from system_one.utils import ROUNDING, render_criterion
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -174,12 +174,6 @@ def serialize_state(state: State) -> str:
     return json.dumps(state, ensure_ascii=False)
 
 
-def render_criterion(value: Any) -> str:
-    if isinstance(value, str):
-        return value
-    return json.dumps(value, ensure_ascii=False, separators=(", ", ": "), default=str)
-
-
 def render_options(question: Question) -> list[str]:
     """Option texts in label-index order. A `noul` is always `[false, true]`."""
     match question:
@@ -226,7 +220,10 @@ def build_sequence(
     shortfall means the head overflowed, `state_ids > room` means the state did.
     """
     max_len, head_max_len = config["max_len"], config["head_max_len"]
-    head_ids = encode(tokenizer, f"{question.type} question: {question.instructions}")
+    head = f"{question.type} question"
+    if question.instructions is not None:
+        head += f": {render_criterion(question.instructions)}"
+    head_ids = encode(tokenizer, head)
     options = render_options(question)
     # ponytail: options are capped at MAX_OPTION_IDS tokens each and truncated to an
     # equal share when they do not fit; author-controlled text, so silent unlike the

@@ -1,7 +1,8 @@
-"""Probability arithmetic behind answer confidence."""
+"""Probability arithmetic and criterion rendering."""
 
 from __future__ import annotations
 
+import json
 import math
 from typing import TYPE_CHECKING, Any
 
@@ -9,7 +10,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
 
 ROUNDING = 4
-PROBABILITY_TOLERANCE = 0.01
+PROBABILITY_TOLERANCE = 0.02
 EMPTY_DISTRIBUTION = "probabilities must not be empty"
 
 
@@ -22,6 +23,7 @@ def distribution(probabilities: Iterable[float]) -> list[float]:
 
     Confidence derived from logits, top-k remnants or any other unnormalized vector
     is meaningless, so callers get a `ValueError` instead of a plausible number.
+    Vectors within tolerance are renormalized, absorbing wire rounding.
     """
     values = [float(probability) for probability in probabilities]
     if not values:
@@ -33,30 +35,38 @@ def distribution(probabilities: Iterable[float]) -> list[float]:
     if abs(total - 1.0) > PROBABILITY_TOLERANCE:
         message = f"probabilities must sum to 1, got {total}"
         raise ValueError(message)
-    return values
+    return [value / total for value in values]
 
 
 def choice_confidence(probabilities: Iterable[float]) -> float:
-    """Confidence in the selected choice: the probability of the reported label."""
-    return max(distribution(probabilities))
+    """Confidence in the selected choice: `(pmax - 1/k) / (1 - 1/k)`.
 
-
-def score_confidence(probabilities: Iterable[float]) -> float:
-    """Confidence in the expected score: `1 - 2 * sd / (k - 1)`.
-
-    The score is an expectation over ordered levels, so its reliability is how
-    tightly the mass sits around it. Entropy cannot see order and would rate a
-    distribution split between the end levels — whose expectation lands in a
-    valley no level claims — the same as one split between neighbours.
+    0 at uniform, 1 at certainty, whatever the number of options.
     """
     values = distribution(probabilities)
     if len(values) == 1:
         return 1.0
-    expected = math.fsum(level * value for level, value in enumerate(values))
-    variance = math.fsum(
-        value * (level - expected) ** 2 for level, value in enumerate(values)
-    )
-    return max(0.0, 1.0 - 2.0 * math.sqrt(variance) / (len(values) - 1))
+    floor = 1.0 / len(values)
+    return (max(values) - floor) / (1.0 - floor)
+
+
+def score_confidence(probabilities: Iterable[float]) -> float:
+    """Confidence in the score: `1 - E|i - mode| / D`, with `D` that of a uniform.
+
+    The score is an expectation over ordered levels, so its reliability is how
+    tightly the mass sits around the most likely level. Entropy cannot see order
+    and would rate a distribution split between the end levels — whose expectation
+    lands in a valley no level claims — the same as one split between neighbours.
+    """
+    values = distribution(probabilities)
+    levels = len(values)
+    if levels == 1:
+        return 1.0
+    mode = max(range(levels), key=values.__getitem__)
+    centre = (levels - 1) / 2
+    uniform_spread = math.fsum(abs(level - centre) for level in range(levels)) / levels
+    spread = math.fsum(value * abs(level - mode) for level, value in enumerate(values))
+    return max(0.0, 1.0 - spread / uniform_spread)
 
 
 def confidence_over(
@@ -70,3 +80,9 @@ def confidence_over(
         return measure(probabilities.values())
     except ValueError:
         return None
+
+
+def render_criterion(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False, separators=(", ", ": "), default=str)
