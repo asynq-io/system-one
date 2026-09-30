@@ -89,6 +89,26 @@ No key, nothing leaves the machine. One difference from the hosted API to know
 about: a choice there lists at most 16 options, and a longer list comes back as
 a `422` with the reason.
 
+### kev
+
+[kev](https://github.com/jaredpalmer/kev) is a family of small decision models
+you train and serve yourself, a drop-in for hosted jev. Its server answers on
+the default `/v1/systemone`, so it needs no `path`:
+
+```shell
+git clone https://github.com/jaredpalmer/kev.git && cd kev
+uv sync --extra serve
+uv run --extra serve python -m kev.serve --run jaredpalmer/kev-4b --port 8009
+```
+
+```python
+SystemOne(HTTPConfig(base_url="http://127.0.0.1:8009", model="jaredpalmer/kev-4b"))
+```
+
+If the server was started with `KEV_API_KEY`, pass the same value as
+`api_key` (or `SYSTEM_ONE_API_KEY`); it is sent as a bearer token. For a
+deployed instance (e.g. Modal), point `base_url` at its URL.
+
 ## ONNX
 
 ```python
