@@ -38,16 +38,20 @@ class NoulCriteria(BaseSchema):
 class Noul(BaseSchema):
     """A yes/no question."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["noul"] = "noul"
-    instructions: str
+    instructions: JSONValue | None = None
     criteria: NoulCriteria | None = None
 
 
 class Choice(BaseSchema):
     """A pick-one question over labelled options."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["choice"] = "choice"
-    instructions: str
+    instructions: JSONValue | None = None
     criteria: Mapping[str, JSONValue | None] = Field(min_length=1)
 
     @field_validator("criteria", mode="before")
@@ -61,8 +65,10 @@ class Choice(BaseSchema):
 class Score(BaseSchema):
     """An ordinal question whose criteria index is the score."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["score"] = "score"
-    instructions: str
+    instructions: JSONValue | None = None
     criteria: Sequence[JSONValue] = Field(min_length=1)
 
 
@@ -77,7 +83,7 @@ class NoulDict(TypedDict):
     """Dict form of `Noul`."""
 
     type: Literal["noul"]
-    instructions: str
+    instructions: NotRequired[JSONValue | None]
     criteria: NotRequired[NoulCriteria | NoulCriteriaDict | None]
 
 
@@ -85,7 +91,7 @@ class ChoiceDict(TypedDict):
     """Dict form of `Choice`; bare labels stand for options without descriptions."""
 
     type: Literal["choice"]
-    instructions: str
+    instructions: NotRequired[JSONValue | None]
     criteria: Mapping[str, JSONValue | None] | Sequence[str]
 
 
@@ -93,7 +99,7 @@ class ScoreDict(TypedDict):
     """Dict form of `Score`."""
 
     type: Literal["score"]
-    instructions: str
+    instructions: NotRequired[JSONValue | None]
     criteria: Sequence[JSONValue]
 
 
@@ -132,7 +138,7 @@ class NoulAnswer(ConfidentAnswer):
     noul: float
 
     def _derive(self) -> float | None:
-        return max(self.noul, 1.0 - self.noul)
+        return choice_confidence([1.0 - self.noul, self.noul])
 
 
 class ChoiceAnswer(ConfidentAnswer):

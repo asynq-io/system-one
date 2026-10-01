@@ -35,9 +35,14 @@ def test_unknown_question_field_is_rejected() -> None:
         question_adapter.validate_python({"type": "noul", "instruction": "typo"})
 
 
-def test_instructions_are_required() -> None:
-    with pytest.raises(ValidationError):
-        question_adapter.validate_python({"type": "noul"})
+def test_instructions_are_optional_and_accept_an_object() -> None:
+    bare = question_adapter.validate_python({"type": "noul"})
+    structured = question_adapter.validate_python(
+        {"type": "noul", "instructions": {"ask": "Is it urgent?"}}
+    )
+
+    assert bare.instructions is None
+    assert structured.instructions == {"ask": "Is it urgent?"}
 
 
 @pytest.mark.parametrize(
@@ -63,7 +68,7 @@ def test_bare_label_list_becomes_a_mapping() -> None:
 
 
 def test_noul_confidence_is_computed() -> None:
-    assert NoulAnswer(noul=0.2).confidence == 0.8
+    assert NoulAnswer(noul=0.2).confidence == 0.6
 
 
 def test_score_keys_are_coerced_to_integers() -> None:
@@ -78,7 +83,7 @@ def test_confidence_is_filled_from_probabilities() -> None:
     answer = ChoiceAnswer.model_validate(
         {"choice": "a", "probabilities": {"a": 0.5, "b": 0.5}}
     )
-    assert answer.confidence == 0.5
+    assert answer.confidence == 0.0
     certain = ChoiceAnswer.model_validate(
         {"choice": "a", "probabilities": {"a": 1.0, "b": 0.0}}
     )
@@ -94,6 +99,18 @@ def test_score_confidence_is_filled_from_probabilities() -> None:
         {"score": 1.0, "probabilities": {0: 0.5, 1: 0.0, 2: 0.5}}
     )
     assert torn.confidence == 0.0
+
+
+def test_rounded_wide_distribution_still_gets_a_confidence() -> None:
+    """254 options at 0.00385 each round down to 0.0038, drifting the sum by 0.0127."""
+    probabilities = {str(index): 0.0038 for index in range(254)} | {"254": 0.0221}
+
+    answer = ChoiceAnswer.model_validate(
+        {"choice": "254", "probabilities": probabilities}
+    )
+
+    assert abs(sum(probabilities.values()) - 1.0) > 0.01
+    assert answer.confidence is not None
 
 
 @pytest.mark.parametrize(

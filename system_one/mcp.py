@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from system_one.agent import AsyncSystemOne
 from system_one.schemas import Question, State, SystemOneOutput
+from system_one.utils import render_criterion
 
 
 class ToolSpec(BaseModel):
@@ -38,7 +39,9 @@ def _group_tool(agent: AsyncSystemOne, name: str, spec: ToolSpec) -> Tool:
         return await agent.ask(state, spec.questions)
 
     description = spec.description or "; ".join(
-        question.instructions for question in spec.questions.values()
+        render_criterion(question.instructions)
+        for question in spec.questions.values()
+        if question.instructions is not None
     )
     return Tool.from_function(run, name=name, description=description)
 

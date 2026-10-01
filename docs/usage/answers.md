@@ -24,7 +24,7 @@ response.scores["severity"].score
 ```python
 answer = response.nouls["urgent"]
 answer.noul         # 0.0–1.0: the probability the statement holds
-answer.confidence   # max(p, 1 - p) — the probability of the reported outcome
+answer.confidence   # |2p - 1| — 0 for a coin flip, 1 when certain either way
 ```
 
 `noul` is a probability, not a boolean. Threshold it where your application
@@ -73,14 +73,15 @@ scale: **how certain is the value this answer reports?**
 
 | Answer | Derived as | `1.0` | `0.0` |
 | --- | --- | --- | --- |
-| `noul` | `max(p, 1 - p)` | certain either way | never — a coin flip is `0.5` |
-| `choice` | the probability of the selected label | the label is certain | never — `1/k` is the floor |
-| `score` | `1 - 2 * sd / (k - 1)` | all mass on one level | mass split across the end levels |
+| `noul` | `\|2p - 1\|` | certain either way | a coin flip |
+| `choice` | `(pmax - 1/k) / (1 - 1/k)` | the label is certain | uniform over the labels |
+| `score` | `1 - E\|i - mode\| / D`, `D` that of a uniform | all mass on one level | as spread as a uniform, or worse |
 
-`score` cannot use the choice rule, because the score is an expectation rather
-than a level. It uses dispersion instead, so a distribution split between the
-end levels — whose expectation lands in a valley no level claims — scores `0.0`,
-while one split between neighbours scores `0.5`.
+These match the confidence the hosted API sends. `score` cannot use the choice
+rule, because the score is an expectation rather than a level. It measures how
+far the mass sits from the most likely level instead, so a distribution split
+between the end levels — whose expectation lands in a valley no level claims —
+scores `0.0`, while one split between neighbours scores `0.25`.
 
 !!! warning "Unusable probabilities leave confidence unset"
     Probabilities that are not a distribution — logits, a truncated top-k, a
