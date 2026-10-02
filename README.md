@@ -88,6 +88,33 @@ SystemOne(HTTPConfig(base_url="https://my-host", model="mine"))
 SystemOne(ONNXConfig())  # local graph, no network, no key
 ```
 
+### Fastino GLiDE
+
+[Fastino's GLiDE](https://docs.fastino.ai/inference/systemone) serves the same
+`POST /v1/systemone` contract at `https://api.fastino.ai`. Create a key in
+[agent.fastino.ai](https://agent.fastino.ai/) (Settings → API keys), then:
+
+```python
+import os
+
+from pydantic import SecretStr
+
+agent = SystemOne(
+    HTTPConfig(
+        base_url="https://api.fastino.ai",
+        model="fastino/GLiDE",
+        api_key=SecretStr(os.environ["FASTINO_API_KEY"]),
+        timeout=300,  # idle models cold-start
+    )
+)
+```
+
+or with no code: `SYSTEM_ONE_BASE_URL=https://api.fastino.ai`,
+`SYSTEM_ONE_MODEL=fastino/GLiDE`, `SYSTEM_ONE_API_KEY=<fastino key>` and
+`SYSTEM_ONE_TIMEOUT=300`, then `SystemOne()`. The key is sent as a bearer
+token, which Fastino accepts alongside `X-API-Key`. Details and limits:
+[Backends](docs/usage/backends.md#fastino-glide).
+
 Backend-specific calls stay reachable through `agent.backend`. Tests can inject
 one directly: `SystemOne(using=FakeBackend())`.
 

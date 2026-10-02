@@ -69,6 +69,58 @@ with httpx2.Client(timeout=30) as client:
     agent.ask(...)
 ```
 
+### Fastino GLiDE
+
+[GLiDE](https://docs.fastino.ai/inference/systemone) is Fastino's hosted
+decision model. It answers the same `POST /v1/systemone` form, so a plain
+`HTTPConfig` is all it takes. Create a key at
+[agent.fastino.ai](https://agent.fastino.ai/) (Settings → API keys):
+
+```python
+import os
+
+from pydantic import SecretStr
+
+agent = SystemOne(
+    HTTPConfig(
+        base_url="https://api.fastino.ai",
+        model="fastino/GLiDE",
+        api_key=SecretStr(os.environ["FASTINO_API_KEY"]),
+        timeout=300,
+    )
+)
+response = agent.ask(
+    "Refund request: 10 days old, 30-day window applies.",
+    {"refund_allowed": {"type": "noul", "instructions": "Does this qualify for refund?"}},
+)
+print(response.nouls["refund_allowed"].noul)
+```
+
+The same thing from the environment, with no config object:
+
+```shell
+SYSTEM_ONE_BASE_URL=https://api.fastino.ai
+SYSTEM_ONE_MODEL=fastino/GLiDE
+SYSTEM_ONE_API_KEY=<your Fastino key>
+SYSTEM_ONE_TIMEOUT=300
+```
+
+Things to know:
+
+- **Auth.** The key goes out as `Authorization: Bearer …`; Fastino accepts that
+  as well as its native `X-API-Key` header.
+- **Cold starts.** An idle or newly deployed model can take a while to answer.
+  Fastino recommends a read timeout of at least 300 seconds, hence `timeout=300`.
+  A `425` (deployment warming) is not in the SDK's retry set — catch `APIError`,
+  wait about 60 seconds and ask again. `429` and `5xx` are retried as usual.
+- **Limits.** Each rendered prompt (state plus one question) must fit in
+  40,000 tokens, and a `choice` or `score` takes at most 255 options or levels.
+  No streaming, and one state per request.
+- **Thresholds.** Probabilities are calibrated per model, not per business —
+  tune the cut-off on representative data instead of assuming `0.5`.
+- **Not covered.** `POST /v1/chat/completions` (GLiNER extraction, decoder
+  LLMs) is a different contract and is not part of this SDK.
+
 ### A local server that speaks the form
 
 `HTTPConfig` is not tied to a hosted vendor: any server that answers a `POST`

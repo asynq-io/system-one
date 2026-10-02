@@ -51,6 +51,9 @@ SystemOne(HTTPConfig(base_url="https://my-host", model="mine"))
 SystemOne(ONNXConfig())  # local graph, no network, no key
 ```
 
+Fastino's hosted GLiDE is a plain `HTTPConfig` too — see
+[Fastino GLiDE](backends.md#fastino-glide).
+
 `SYSTEM_ONE_BACKEND=onnx` picks the local backend without naming a config, and
 keyword arguments patch the config: `SystemOne(model="x")` or
 `SystemOne(ONNXConfig(), onnx_dir="elsewhere")`.
